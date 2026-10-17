@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full moon with a black cat silhouette in front. Keep the moon and the cat's head within the 66dp safe zone (radius 33 around 54,54). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Moon -->
+    <path
+        android:fillColor="#FFFFD86B"
+        android:pathData="M32,48a22,22 0,1 0,44 0a22,22 0,1 0,-44 0z" />
+    <!-- Cat: head with ears, body running off the bottom edge -->
+    <path
+        android:fillColor="#FF16161E"
+        android:pathData="M38,38L48,47.2Q54,45.8 60,47.2L70,38L69.2,52.5Q72,57 72,62.5Q72,70 66,74Q74,80 76,108H32Q34,80 42,74Q36,70 36,62.5Q36,57 38.8,52.5Z" />
+    <!-- Eyes -->
+    <path
+        android:fillColor="#FFFFC440"
+        android:pathData="M43,61.5Q47,56 51,61.5Q47,67 43,61.5Z M57,61.5Q61,56 65,61.5Q61,67 57,61.5Z" />
+</vector>
