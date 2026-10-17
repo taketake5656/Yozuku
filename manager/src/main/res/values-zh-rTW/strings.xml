@@ -1,29 +1,351 @@
 <resources>
     <!-- Home - Status -->
-    <string name="home_status_service_is_running">Yozuku 正在執行</string>
-    <string name="home_status_service_not_running">Yozuku 未執行</string>
+    <string name="home_status_service_is_running">%1$s 正在執行</string>
+    <string name="home_status_service_not_running">%1$s 未執行</string>
+    <string name="home_status_service_version">版本 %2$s，%1$s</string>
+    <string name="home_start_method_title">啟動服務的方式</string>
+    <string name="home_start_method_message">Root 和 ADB 皆可使用。請選擇以哪種身分啟動 Yozuku 服務。</string>
+    <string name="home_start_method_root">Root</string>
+    <string name="home_start_method_adb">ADB（shell uid 2000）</string>
+    <string name="home_status_service_version_update"><![CDATA[版本 %2$s，%1$s<br>再次啟動即可更新至版本 %3$s]]></string>
+    <string name="home_hero_adb_full">ADB：完整存取</string>
+    <string name="home_hero_adb_limited">ADB：受限存取</string>
 
-    <!-- Application management -->
+    <!-- Home - Sections -->
+    <string name="home_section_manage">管理</string>
+    <string name="home_section_start">啟動</string>
+    <string name="home_section_info">資訊</string>
+
+    <!-- Home - Adb -->
+    <string name="home_adb_title"><![CDATA[透過連接電腦啟動]]></string>
+    <string name="home_adb_description"><![CDATA[若裝置未 Root，需要使用 adb 啟動 Yozuku（需連接電腦）。每次重新啟動裝置後都必須重複此操作。請<b><a href=\"%1$s\">閱讀說明</a></b>。]]>
+
+注意：Yozuku 是 Shizuku 的現代後繼者。為避免衝突，請務必先解除安裝舊版官方 Shizuku 應用程式。</string>
+    <string name="home_adb_button_view_help">閱讀說明</string>
+    <string name="home_adb_button_view_command">查看指令</string>
+    <string name="home_adb_dialog_view_command_message"><![CDATA[<font face="monospace">%1$s</font><br><br>* 還有其他注意事項，請確認已先閱讀說明。]]></string>
+    <string name="home_adb_dialog_view_command_copy_button">複製</string>
+    <string name="home_adb_dialog_view_command_button_send">傳送</string>
+
+    <!-- Home - Wireless Adb -->
+    <string name="home_wireless_adb_title"><![CDATA[透過無線偵錯啟動]]></string>
+    <string name="home_wireless_adb_description"><![CDATA[在 Android 11 以上版本中，可以啟用無線偵錯，不必連接電腦即可直接在裝置上啟動 Yozuku。<p>請先查看逐步指南。]]>
+
+注意：Yozuku 是 Shizuku 的現代後繼者。為避免衝突，請務必先解除安裝舊版官方 Shizuku 應用程式。</string>
+    <string name="home_wireless_adb_description_pre_11"><![CDATA[在 Android 11 之前的版本中，必須連接電腦才能啟用無線偵錯。]]></string>
+    <string name="home_wireless_adb_view_guide_button">逐步指南</string>
+    <string name="home_local_network_title">區域網路存取</string>
+    <string name="home_local_network_description">在此 Android 版本上，無線偵錯需要 %1$s。</string>
+    <string name="home_local_network_granted">已授予 %1$s。</string>
+    <string name="home_local_network_missing">未授予 %1$s。</string>
+    <string name="home_local_network_grant">授予存取權</string>
+    <string name="home_local_network_permission_denied">無線偵錯需要區域網路存取權。</string>
+
+    <!-- Adb -->
+    <string name="dialog_adb_discovery">正在搜尋無線偵錯服務</string>
+    <string name="dialog_adb_discovery_message">請在「開發人員選項」中啟用「無線偵錯」。網路變更時，「無線偵錯」會自動關閉。\n\n注意：請勿關閉「開發人員選項」或「USB 偵錯」，否則 Yozuku 將會停止。</string>
+    <string name="dialog_adb_discovery_message_toggle_wireless_debugging">如果一直在搜尋，請嘗試關閉後再重新開啟「無線偵錯」。</string>
+    <string name="dialog_adb_port">連接埠</string>
+    <string name="dialog_adb_invalid_port">連接埠必須是 1 到 65535 之間的整數。</string>
+    <string name="adb_pairing">配對</string>
+    <string name="dialog_adb_pairing_title">與裝置配對</string>
+    <string name="dialog_adb_pairing_discovery">正在搜尋配對服務</string>
+    <string name="dialog_adb_pairing_paring_code">配對碼</string>
+    <string name="paring_code_is_wrong">配對碼錯誤。</string>
+    <string name="cannot_connect_port">無法連線至無線偵錯服務。</string>
+    <string name="dialog_wireless_adb_not_enabled">未啟用無線偵錯。\n注意：在 Android 11 之前，必須連接電腦才能啟用無線偵錯。</string>
+    <string name="dialog_adb_pairing_message">請依照以下步驟開始配對：「開發人員選項」-「無線偵錯」-「使用配對碼配對裝置」。\n\n開始配對後，即可輸入配對碼。</string>
+    <string name="adb_pairing_requires_multi_window">請先進入分割畫面（多視窗）模式。</string>
+    <string name="adb_pairing_requires_multi_window_reason">系統要求配對對話方塊必須保持可見，使用分割畫面模式是讓本應用程式和系統對話方塊同時可見的唯一方法。</string>
+    <string name="adb_error_key_store">無法產生無線偵錯所需的金鑰。\n這可能是因為此裝置的 KeyStore 機制已損壞。</string>
+    <string name="adb_pair_required">請先完成配對步驟。</string>
+    <string name="development_settings">開發人員選項</string>
+    <string name="notification_settings">通知選項</string>
+    <string name="adb_pairing_tutorial_title">將 Yozuku 與裝置配對</string>
+    <string name="adb_pairing_tutorial_content_notification">Yozuku 的通知會協助你完成配對。</string>
+    <string name="adb_pairing_tutorial_content_steps">進入「開發人員選項」-「無線偵錯」。輕觸「使用配對碼配對裝置」，你會看到一組六位數的配對碼。</string>
+    <string name="adb_pairing_tutorial_content_enter_pairing_code">在通知中輸入配對碼以完成配對。</string>
+    <string name="adb_pairing_tutorial_content_notification_blocked">配對過程需要你與 Yozuku 的通知互動。請允許 Yozuku 傳送通知。</string>
+    <string name="adb_pairing_tutorial_content_miui">MIUI 使用者可能需要在系統設定的「通知」-「通知欄」中，將通知樣式切換為「Android」。</string>
+    <string name="adb_pairing_tutorial_content_miui_2">否則，你可能無法在通知中輸入配對碼。</string>
+    <string name="adb_pairing_tutorial_content_left_is_clickable">請注意，「無線偵錯」選項的左側部分可以輕觸，輕觸後會開啟新頁面。只開啟右側的開關是不正確的。</string>
+    <string name="adb_pairing_tutorial_content_finish">返回 Yozuku 並啟動 Yozuku。</string>
+    <string name="adb_pairing_tutorial_content_network">Yozuku 需要存取區域網路，這由網路權限控制。</string>
+    <string name="adb_pairing_tutorial_content_network_limation_not_foreground">部分系統（例如 MIUI）會禁止應用程式在不可見時存取網路，即使應用程式依標準使用了前景服務。在這類系統上，請為 Yozuku 關閉電池最佳化功能。</string>
+
+    <!-- Home - Root -->
+    <string name="home_root_title"><![CDATA[啟動（適用於已 Root 的裝置）]]></string>
+    <string name="home_root_description"><![CDATA[此外，Yozuku 可以在開機時自動啟動。如果沒有自動啟動，請檢查系統或第三方工具是否限制了 Yozuku。<br>可參考 %s。]]>
+
+注意：Yozuku 是 Shizuku 的現代後繼者。為避免衝突，請務必先解除安裝舊版官方 Shizuku 應用程式。</string>
+    <string name="home_root_description_sui"><![CDATA[如果你使用 Magisk，可以嘗試 %1$s。對於 Root 使用者，它最終將取代 Yozuku。請注意，現有的應用程式需要稍作修改才能使用 %2$s。]]></string>
+    <string name="home_root_button_start">啟動</string>
+    <string name="home_root_button_restart">重新啟動</string>
+
+    <!-- Home - Application management -->
     <string name="home_app_management_title">應用程式管理</string>
     <plurals name="home_app_management_authorized_apps_count">
         <item quantity="other">已授權 %d 個應用程式</item>
     </plurals>
+    <string name="home_app_management_view_authorized_apps"><![CDATA[輕觸以管理已授權的應用程式]]></string>
+    <string name="home_app_management_empty">要求或宣告使用 Yozuku 的應用程式會顯示在這裡。</string>
+
+    <!-- Home - Learn more -->
+    <string name="home_learn_more_title">認識 Yozuku</string>
+    <string name="home_learn_more_description">了解如何使用 Yozuku 進行開發</string>
+
+    <!-- Home - Diagnostics -->
+    <string name="home_refresh">重新整理</string>
+    <string name="home_diagnostics_title">診斷</string>
+    <string name="home_diagnostics_copy">複製診斷資訊</string>
+    <string name="home_diagnostics_copied">已複製診斷資訊。</string>
+    <string name="home_modules_description">安裝及管理以 ADB 為基礎的模組</string>
+
+    <!-- Home - Adb permissions limited -->
+    <string name="home_adb_is_limited_title">你需要執行額外的步驟</string>
+    <string name="home_adb_is_limited_description">你的裝置製造商限制了 adb 權限，使用 Yozuku 的應用程式將無法正常運作。\n\n通常可以調整「開發人員選項」中的某些選項來解除此限制。詳細做法請閱讀說明。\n\n可能需要重新啟動 Yozuku，變更才會生效。</string>
+
+    <!-- Application management -->
+    <string name="app_management_select_all">全選</string>
+    <string name="app_management_deselect_all">取消全選</string>
+    <string name="app_management_dialog_adb_is_limited_title">adb 的權限受到限制</string>
+    <string name="app_management_dialog_adb_is_limited_message"><![CDATA[很可能是你的裝置製造商限制了 adb 的權限。<p><b><a href=\"%1$s\">此文件</a></b>中可能有適用於你的系統的解決方法。]]></string>
+    <string name="app_management_item_summary_requires_root">* 需要以 Root 執行 Yozuku</string>
 
     <!-- Terminal -->
     <string name="home_terminal_title">在終端機中使用 Yozuku</string>
+    <string name="home_terminal_description">在你喜歡的終端機應用程式中透過 Yozuku 執行指令</string>
+    <string name="terminal_tutorial_1">首先，將檔案匯出到任意位置。你會看到兩個檔案：%1$s 和 %2$s。</string>
+    <string name="terminal_tutorial_1_description">如果所選資料夾中有同名檔案，這些檔案將被刪除。\n\n匯出功能使用 SAF（儲存空間存取架構）。有回報指出 MIUI 會破壞 SAF 的功能。如果你使用 MIUI，可能需要從 Yozuku 的 apk 中擷取檔案，或從 GitHub 下載。</string>
+    <string name="terminal_export_files">匯出檔案</string>
+    <string name="terminal_tutorial_2">接著，使用任意文字編輯器開啟並編輯 %1$s。</string>
+    <string name="terminal_tutorial_2_description">例如，若要在 %1$s 中使用 Yozuku，應將 %2$s 取代為 %3$s（%4$s 是 %1$s 的套件名稱）。</string>
+    <string name="terminal_tutorial_3">最後，將檔案移到終端機應用程式可以存取的位置，即可使用 %1$s 透過 Yozuku 執行指令。</string>
+    <string name="terminal_tutorial_3_description">提示：為 %1$s 授予執行權限並將其加入 %2$s，即可直接使用 %1$s。</string>
+    <string name="rish_description"><![CDATA[
+使用 %1$s，你可以在任何終端機應用程式中連線並操作由 Yozuku 執行的 shell。
+<p>關於 %1$s 的詳細用法，請輕觸以查看文件。
+    ]]></string>
 
     <!-- Settings -->
     <string name="settings_title">設定</string>
     <string name="settings_language">語言</string>
     <string name="settings_user_interface">外觀</string>
+    <string name="settings_black_night_theme">純黑夜間主題</string>
+    <string name="settings_black_night_theme_summary">啟用夜間模式時使用純黑主題</string>
     <string name="settings_startup">啟動</string>
-    <string name="settings_start_on_boot">開機自啟動 (Root)</string>
+    <string name="settings_translation_contributors">翻譯貢獻者</string>
+    <string name="settings_translation">參與翻譯</string>
+    <string name="settings_translation_summary">協助我們將 %s 翻譯成你的語言</string>
+    <string name="settings_start_on_boot">開機時自動啟動（Root）</string>
     <string name="settings_start_on_boot_summary">對於已 Root 的裝置，Yozuku 可以在開機時自動啟動</string>
+    <string name="settings_use_system_color">使用系統主題顏色</string>
+    <string name="settings_category_startup_summary">自動啟動 Yozuku</string>
+    <string name="settings_category_appearance_summary">主題、深色模式和顏色</string>
+    <string name="settings_category_language_summary">應用程式語言和翻譯</string>
+    <string name="settings_category_modules_summary">模組存取和權限</string>
 
-    <!-- ADB -->
-    <string name="development_settings">開發人員選項</string>
-    <string name="dialog_adb_discovery_message">請在「開發人員選項」中啟用「無線偵錯」。</string>
+    <!-- ADB modules -->
+    <string name="modules_title">ADB 模組</string>
+    <string name="modules_settings_title">模組</string>
+    <string name="modules_settings_summary">安裝 ZIP 模組，並透過執行中的 Yozuku ADB/Root 伺服器執行其動作</string>
+    <string name="settings_modules_recommendations">推薦</string>
+    <string name="modules_header_summary">已安裝 %1$d 個，已啟用 %2$d 個</string>
+    <string name="modules_version_label">版本：%s</string>
+    <string name="modules_author_label">作者：%s</string>
+    <string name="modules_access_mode">模組存取模式</string>
+    <string name="modules_access_mode_safe">安全</string>
+    <string name="modules_access_mode_safe_summary">無 shell 橋接、無 WebUI 下載、無動作、無服務。</string>
+    <string name="modules_access_mode_custom">自訂</string>
+    <string name="modules_access_mode_custom_summary">手動選擇動作、服務、WebUI 橋接、網路和下載權限。</string>
+    <string name="modules_access_mode_full">完整存取</string>
+    <string name="modules_access_mode_full_summary">允許 shell 橋接、動作、服務和 WebUI 下載。WebView 的網際網路存取仍會被封鎖。</string>
+    <string name="modules_custom_permissions">自訂權限</string>
+    <string name="modules_custom_permissions_summary">分別設定每項模組權限</string>
+    <string name="modules_permission_action">執行動作</string>
+    <string name="modules_permission_action_summary">允許手動執行 action.sh。</string>
+    <string name="modules_permission_service">執行服務</string>
+    <string name="modules_permission_service_summary">在同時啟用背景動作時允許執行 service.sh。</string>
+    <string name="modules_permission_web_bridge">WebUI shell 橋接</string>
+    <string name="modules_permission_web_bridge_summary">僅對本機 WebUI，且僅在 WebView 網際網路存取關閉時公開 window.Shizuku。</string>
+    <string name="modules_permission_web_network">WebView 網際網路存取</string>
+    <string name="modules_permission_web_network_summary">允許 HTTPS 導覽和資源載入。這會停止該 WebView 公開 shell 橋接。</string>
+    <string name="modules_permission_web_download">WebUI download()</string>
+    <string name="modules_permission_web_download_summary">允許透過 HTTPS 將檔案下載到 WebUI 資料夾（index.html 除外）。</string>
+    <string name="modules_background_actions">允許背景動作</string>
+    <string name="modules_background_actions_summary">允許已安裝的模組在完整存取模式下要求背景 ADB 工作</string>
+    <string name="modules_background_allowed">允許背景</string>
+    <string name="modules_background_blocked">封鎖背景</string>
+    <string name="modules_install_zip">安裝 ZIP</string>
+    <string name="modules_empty_title">未安裝任何模組</string>
+    <string name="modules_empty_summary">ADB 模組使用 KernelSU/Magisk 風格的 ZIP，包含 module.prop，以及選用的橫幅、WebUI、action.sh 和 service.sh。</string>
+    <string name="modules_install_success">已安裝 %s</string>
+    <string name="modules_install_failed">安裝失敗：%s</string>
+    <string name="modules_enabled">已啟用</string>
+    <string name="modules_disabled">已停用</string>
+    <string name="modules_enable">啟用</string>
+    <string name="modules_disable">停用</string>
+    <string name="modules_full_trust">完全信任</string>
+    <string name="modules_trust">信任</string>
+    <string name="modules_untrust">取消信任</string>
+    <string name="modules_run_action">動作</string>
+    <string name="modules_run_service">服務</string>
+    <string name="modules_running">正在執行模組指令碼…</string>
+    <string name="modules_open_webui">WebUI</string>
+    <string name="modules_webui">模組 WebUI</string>
+    <string name="modules_delete">刪除</string>
+    <string name="modules_delete_title">要刪除模組嗎？</string>
+    <string name="modules_delete_message">%s 將從 Yozuku 的模組儲存空間中移除。</string>
+    <string name="modules_action_result">動作已完成：結束代碼 %d</string>
+    <string name="modules_action_failed">動作失敗</string>
+    <string name="modules_service_result">服務已完成：結束代碼 %d</string>
+    <string name="modules_service_failed">服務失敗</string>
+    <string name="modules_recommand_title">ReCommand</string>
+    <string name="modules_recommand_source">%1$s / %2$s</string>
+    <string name="modules_recommand_expand">展開</string>
+    <string name="modules_recommand_collapse">收合</string>
+    <string name="modules_recommand_copy">複製</string>
+    <string name="modules_recommand_execute">執行</string>
+    <string name="modules_recommand_close">關閉</string>
+    <string name="modules_recommand_command_clip_label">模組指令</string>
+    <string name="modules_recommand_webui">WebUI 的 ReCommand</string>
+    <string name="modules_recommand_webui_summary">在 WebUI 執行 shell 指令前顯示確認對話方塊。</string>
+    <string name="modules_recommand_action">動作的 ReCommand</string>
+    <string name="modules_recommand_action_summary">在執行 action.sh 前顯示確認對話方塊。</string>
+
+    <!-- About -->
+    <string name="action_about">關於</string>
+    <string name="about_source_code_button">原始碼</string>
+    <string name="about_view_source_code"><![CDATA[在 %s 查看原始碼]]></string>
+
+    <!-- Stop -->
+    <string name="action_stop">停止 Yozuku</string>
+    <string name="dialog_stop_message">Yozuku 服務將會停止。</string>
+
+    <!-- Notification -->
+    <string name="notification_channel_service_status">服務啟動狀態</string>
+    <string name="notification_service_starting">正在啟動 Yozuku 服務…</string>
+    <string name="notification_service_start_failed">啟動 Yozuku 服務失敗。</string>
+    <string name="notification_service_start_no_root">要求 Root 權限失敗。</string>
+    <string name="notification_working">處理中…</string>
+    <string name="notification_channel_adb_pairing">無線偵錯配對</string>
+    <string name="notification_adb_pairing_input_paring_code">輸入配對碼</string>
+    <string name="notification_adb_pairing_searching_for_service_title">正在搜尋配對服務</string>
+    <string name="notification_adb_pairing_service_found_title">已找到配對服務</string>
+    <string name="notification_adb_pairing_stop_searching">停止搜尋</string>
+    <string name="notification_adb_pairing_working_title">正在配對</string>
+    <string name="notification_adb_pairing_succeed_title">配對成功</string>
+    <string name="notification_adb_pairing_succeed_text">現在可以啟動 Yozuku 服務了。</string>
+    <string name="notification_adb_pairing_failed_title">配對失敗</string>
+    <string name="notification_adb_pairing_retry">重試</string>
+
+    <!-- Permission related, appears in system permission UI -->
+    <string name="permission_label">存取 Yozuku</string>
+    <string name="permission_description">允許應用程式使用 Yozuku。</string>
+    <string name="permission_warning_template"><![CDATA[要允許<b>%1$s</b>%2$s嗎？]]></string>
+    <string name="grant_dialog_button_allow_always">一律允許</string>
+    <string name="grant_dialog_button_deny">拒絕</string>
+
+    <!-- Starter -->
+    <string name="starter">啟動器</string>
+    <string name="start_with_root_failed">無法啟動服務，因為未授予 Root 權限或此裝置未 Root。</string>
+
+    <!-- Misc -->
+    <string name="dialog_cannot_open_browser_title">無法開啟瀏覽器</string>
+    <string name="toast_copied_to_clipboard">%s\n已複製到剪貼簿。</string>
+    <string name="toast_copied_to_clipboard_with_text"><![CDATA[<b>%s</b> 已複製到剪貼簿。]]></string>
+
+    <!-- Messages for legacy -->
+    <string name="dialog_legacy_not_support_title">%1$s 不支援新版 Yozuku</string>
+    <string name="dialog_legacy_not_support_message"><![CDATA[舊版 Yozuku 已於 2019 年 3 月停止支援，且無法在較新的 Android 系統上運作。<p>請聯絡 <b>%1$s</b> 的開發者進行更新。]]></string>
+    <string name="dialog_requesting_legacy_title">%1$s 正在要求舊版 Yozuku</string>
+    <string name="dialog_requesting_legacy_message"><![CDATA[<b>%1$s</b> 支援新版 Yozuku，但正在要求舊版 Yozuku。這可能是因為 Yozuku 未執行，請在 Yozuku 應用程式中檢查。<p>舊版 Yozuku 已於 2019 年 3 月停止支援。]]></string>
+    <string name="dialog_requesting_legacy_button_open_shizuku">開啟 Yozuku</string>
 
     <!-- Lab Features -->
     <string name="lab_features_title">實驗室功能</string>
+    <string name="lab_features_summary">實驗性功能</string>
+    <string name="shizuku_connectors_title">Yozuku 連接器</string>
+    <string name="shizuku_connectors_summary">允許外掛程式啟動 Yozuku</string>
+    <string name="nightdog_title">NightDog 監控程式</string>
+    <string name="nightdog_summary">監控伺服器狀態，並從停止回應或系統服務停止中復原</string>
+    <string name="nightdog_description">NightDog 會透過定期心跳監控伺服器主執行緒，並使用 Binder linkToDeath 追蹤重要的系統服務（package、activity、user、appops）。如果伺服器停止回應或失去重要的繫結，NightDog 會終止卡住的程序，讓啟動常駐程式自動重新啟動它。</string>
+    <string name="unsafe_warning_title">警告</string>
+    <string name="unsafe_warning_message">啟用此功能並不安全。確定要啟用嗎？</string>
+
+    <!-- Update Settings -->
+    <string name="update_settings_title">更新設定</string>
+    <string name="update_settings_catalog">模組目錄</string>
+    <string name="update_settings_catalog_enabled">啟用目錄</string>
+    <string name="update_settings_catalog_enabled_summary">顯示從 GitHub Topics 找到的模組</string>
+    <string name="update_settings_frequency">更新頻率</string>
+    <string name="update_settings_frequency_label">檢查更新</string>
+    <string name="update_settings_frequency_manual">手動</string>
+    <string name="update_settings_frequency_daily">每天</string>
+    <string name="update_settings_frequency_weekly">每週</string>
+    <string name="update_settings_install_mode">安裝方式</string>
+    <string name="update_settings_install_mode_label">預設安裝方法</string>
+    <string name="update_settings_install_mode_sources">從原始碼建置</string>
+    <string name="update_settings_install_mode_release">下載發行版 ZIP</string>
+    <string name="update_settings_github">GitHub</string>
+    <string name="update_settings_github_pat">個人存取權杖</string>
+    <string name="update_settings_github_pat_set">已設定權杖</string>
+    <string name="update_settings_github_pat_unset">未設定（每小時 60 次請求）</string>
+    <string name="update_settings_github_pat_title">GitHub Personal Access Token</string>
+    <string name="update_settings_github_pat_description">選用。GitHub PAT 可將 API 速率限制從每小時 60 次提高到 5000 次。公開儲存庫只需要 public_repo 權限範圍。</string>
+    <string name="update_settings_github_pat_label">權杖</string>
+    <string name="update_settings_github_pat_show">顯示</string>
+    <string name="update_settings_github_pat_hide">隱藏</string>
+    <string name="update_settings_github_pat_clear">清除</string>
+    <string name="update_settings_github_pat_delete">刪除權杖</string>
+    <string name="update_settings_github_pat_delete_summary">移除已儲存的 GitHub 權杖</string>
+
+    <!-- Module Catalog -->
+    <string name="modules_catalog">目錄</string>
+    <string name="modules_catalog_title">模組目錄</string>
+    <string name="modules_catalog_empty">找不到模組</string>
+    <string name="modules_catalog_sort_newest">最新</string>
+    <string name="modules_catalog_sort_oldest">最舊</string>
+    <string name="modules_catalog_sort_stars">星號數</string>
+    <string name="modules_catalog_sort_official">官方</string>
+    <string name="modules_outdated">長期未更新</string>
+    <string name="modules_catalog_install_sources">從原始碼安裝</string>
+    <string name="modules_catalog_install_release">下載發行版 ZIP</string>
+    <string name="modules_catalog_install_description">選擇此模組的安裝方式：</string>
+    <string name="modules_catalog_install_success">模組安裝成功</string>
+    <string name="modules_catalog_install_failed">安裝失敗：%s</string>
+    <string name="modules_catalog_token_required">需要 GitHub 權杖</string>
+    <string name="modules_catalog_token_hint">GitHub Personal Access Token</string>
+    <string name="modules_catalog_token_description">在 GitHub 上搜尋模組需要權杖。你可以在 github.com/settings/tokens 建立權杖。</string>
+    <string name="modules_catalog_token_format_warning">權杖應以 ghp_ 或 github_pat_ 開頭，且至少 30 個字元</string>
+    <string name="modules_catalog_loading">正在載入目錄…</string>
+    <string name="modules_catalog_error">無法載入目錄</string>
+    <string name="modules_catalog_install">安裝</string>
+    <string name="modules_catalog_installing">正在安裝…</string>
+    <string name="modules_catalog_view_github">在 GitHub 上查看</string>
+    <string name="modules_catalog_skip_token">略過</string>
+    <string name="modules_catalog_open">開啟目錄</string>
+    <string name="modules_catalog_installed">已安裝</string>
+    <string name="modules_catalog_update">更新</string>
+    <string name="modules_catalog_back">返回</string>
+    <string name="modules_catalog_danger_title">可能不安全的模組</string>
+    <string name="modules_catalog_danger_message">此模組包含異常龐大的內容，可能會造成問題：</string>
+    <string name="modules_catalog_danger_confirm">仍要繼續嗎？</string>
+    <string name="modules_catalog_danger_continue">繼續</string>
+    <string name="modules_catalog_danger_go_back">返回</string>
+    <string name="modules_webview_error_title">WebView 錯誤</string>
+    <string name="modules_webview_error_wear">此 WearOS 裝置不支援 WebView，或 WebView 在初始化時當機。\n\n%1$s</string>
+    <string name="dialog_adb_discovered_port">找到的連接埠：%1$d</string>
+
+    <!-- TV Status -->
+    <string name="tv_status_active">已啟用</string>
+    <string name="tv_status_disabled">已停用</string>
+    <string name="tv_status_trusted">已信任</string>
+
+    <!-- Wear Catalog -->
+    <string name="wear_catalog_sort_newest">最新</string>
+    <string name="wear_catalog_sort_stars">星號數</string>
+    <string name="wear_catalog_sort_official">官方</string>
+    <string name="wear_catalog_sort_by">排序方式</string>
+    <string name="wear_catalog_filter">篩選</string>
 </resources>
