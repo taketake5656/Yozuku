@@ -60,21 +60,6 @@ def registerShellDexCopyTask(String variantName) {
 registerShellDexCopyTask("debug")
 registerShellDexCopyTask("release")
 
-tasks.register("copyTapiScript") {
-    def srcFile = file("src/main/assets/tapi")
-    def dstDir = rootProject.layout.projectDirectory.dir("manager/src/main/assets")
-
-    inputs.file(srcFile)
-    outputs.file(dstDir.file("tapi"))
-
-    doLast {
-        copy {
-            from srcFile
-            into dstDir
-        }
-    }
-}
-
 dependencies {
     implementation libs.hidden.compat
     compileOnly libs.hidden.stub

@@ -101,6 +101,13 @@ import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 
 class ModulesActivity : AppActivity() {
 
+    private var reloadTrigger by androidx.compose.runtime.mutableIntStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        reloadTrigger++
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -156,7 +163,7 @@ class ModulesActivity : AppActivity() {
                 }
             }
 
-            LaunchedEffect(Unit) {
+            LaunchedEffect(reloadTrigger) {
                 modules = AdbModuleManager.listModules(context)
             }
 
@@ -268,7 +275,7 @@ class ModulesActivity : AppActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                         if (showCatalog) {
                             moe.shizuku.manager.module.catalog.TvCatalogScreen(
-                                onNavigateUp = { showCatalog = false }
+                                onNavigateUp = { showCatalog = false; reload() }
                             )
                         } else if (showLabFeatures) {
                             moe.shizuku.manager.settings.TvLabMenuScreen(
@@ -386,7 +393,7 @@ class ModulesActivity : AppActivity() {
                 ) { catalogOpen ->
                     if (catalogOpen) {
                         moe.shizuku.manager.module.catalog.CatalogScreen(
-                            onNavigateUp = { showCatalog = false }
+                            onNavigateUp = { showCatalog = false; reload() }
                         )
                     } else {
                 ShizukuExpressiveTheme {
@@ -397,7 +404,7 @@ class ModulesActivity : AppActivity() {
                         Row(
                             modifier = Modifier
                                 .height(36.dp)
-                                .padding(end = 4.dp)
+                                .padding(end = 10.dp)
                                 .clip(MaterialTheme.shapes.small),
                             horizontalArrangement = Arrangement.spacedBy(0.dp)
                         ) {
@@ -662,8 +669,8 @@ private fun ModuleCard(
         Column {
             ModuleBanner(module)
             Column(
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(14.dp),

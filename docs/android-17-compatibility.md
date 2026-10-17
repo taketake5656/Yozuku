@@ -1,41 +1,53 @@
-# Android 17（API 37）互換性の比較
+# Android 15 以降の非公開 API の変更と Android17Compat レイヤー
 
 **日本語** | [English](android-17-compatibility.en.md)
 
-このドキュメントでは、Android 17（Cinnamon Bun / API 37）Canary 上で動作させた場合の、オリジナルの Shizuku（v13.6.0）と、モダン化したフォーク（v13.6.0.r39 以降）の技術的な比較を示します。
+このドキュメントでは、プラットフォームの非公開のパッケージ API と権限 API で実際に何が変わったか、それをどう確かめたか、そして `Android17Compat` がそれにどう対処しているかを記録します。以下のシグネチャはすべて、記憶ではなくプラットフォームから読み取ったものです。
 
-## 根本的な問題
+## 確認の方法
 
-2026 年 5 月の Android 17 のアップデートで、Google は仮想デバイスへの対応とセキュリティ向上のため、非公開 API に大きな変更を加えました。具体的には、複数デバイスを区別できるよう、`IPackageManager` と `IPermissionManager` のメソッドシグネチャに `deviceId` パラメータが追加されました。
+- コンパイル済みの Android 17 フレームワーク `org.robolectric:android-all:17-robolectric-15733970`。AOSP からビルドされたもので、SDK の公開 `android.jar` には含まれない非公開の `android.permission.IPermissionManager$Stub` と `android.content.pm.IPackageManager$Stub` が入っています。この 2 つのインターフェースに `javap` を使うと、正確なディスクリプタが得られます。
+- `platform/frameworks/base` の `android15-release`、`android16-release`、`android17-release` ブランチにある AIDL のソース。
+- `dev.rikka.hidden:compat:4.4.0` 本体。このヘルパーライブラリがどのシグネチャに対してコンパイルされたかを確認するためです。
 
-### 影響を受ける API
-- `IPermissionManager.grantRuntimePermission`
-- `IPermissionManager.revokeRuntimePermission`
-- `IPermissionManager.checkPermission`
-- `IPackageManager.getInstalledPackages`
-- `IPackageManager.getPackageInfo`
-- `IPackageManager.getApplicationInfo`
+## 変わったこと
 
-Yozuku はこれらの非公開 API に依存して動作するため、従来の実装は API 37 以降で `NoSuchMethodError` により失敗します。
+`IPermissionManager`（15、16、17 で共通）:
 
-## オリジナルの Shizuku（v13.6.0）
+```
+int  checkPermission(String packageName, String permissionName, String persistentDeviceId, int userId)
+void grantRuntimePermission(String packageName, String permissionName, String persistentDeviceId, int userId)
+void revokeRuntimePermission(String packageName, String permissionName, String persistentDeviceId, int userId, String reason)
+int  checkUidPermission(int uid, String permissionName, int deviceId)
+```
 
-オリジナルの Shizuku を Android 17 で動かすと、サーバープロセスは起動するものの、権限の判定やパッケージ一覧の取得の際に致命的な失敗が発生します。
+重要な点が 2 つあり、どちらも間違えやすいものです。
 
-### 動作
-- 権限の付与／取り消しが何も表示されずに失敗するか、サーバーがクラッシュします。
-- パッケージ一覧が空で返されるか、クライアントアプリでクラッシュが発生します。
-- システムサービスとのやり取りで、Logcat に `NoSuchMethodError` が頻繁に記録されます。
+1. **パッケージ名が先で、権限名が後です。** 逆に渡しても、目立つ失敗にはなりません。どちらの引数も `String` なので呼び出しは成功し、`PERMISSION_DENIED` が返ります。その結果、付与されている権限が拒否と報告され、プログラムの誤りではなく権限の問題のように見えてしまいます。
+2. **ここでのデバイス ID は `String` で、このデバイスを表す値は `"default:0"` です。** これは `android.permission.PermissionManager` の `getPersistentDeviceId(0)` が返す値で、`"default"` ではありません。一方で、*同じ*インターフェースのほかのメソッド（`shouldShowRequestPermissionRationale`、`isPermissionRevokedByPolicy`、`getPermissionRequestState`）は今も `int deviceId` を受け取ります。そのため、インターフェース全体に通用する決め打ちの形はありません。
 
-## Yozuku（モダン化したフォーク）
+`IPackageManager`:
 
-Yozuku は `Android17Compat.java` によって、高性能な動的リフレクションのフォールバックを実装しています。
+```
+PackageInfo     getPackageInfo(String, long, int)         変更なし
+ApplicationInfo getApplicationInfo(String, long, int)     変更なし
+                getInstalledPackages(long, int)           17 で ParceledListSlice -> PackageInfoList
+                getInstalledApplications(long, int)       変更なし
+```
 
-### 技術的な実装
-- **動的なメソッド解決:** 対象のメソッド（例: `grantRuntimePermission`）が新しい `deviceId` パラメータを必要とするかを判別し、必要な場合は `Context.DEVICE_ID_DEFAULT`（0）を渡します。
-- **キャッシュ層:** 解決済みの `Method` オブジェクトやシステムサービスのプロキシを保持して、リフレクションのオーバーヘッドをなくし、ネイティブに近い性能を確保します。
-- **サービスへの組み込み:** `ShizukuService` は重要なシステム API の呼び出しすべてに `Android17Compat` を使用し、API 37 以降での安定性を確保しています。
+`getInstalledPackages` は**戻り値の型**が変わりました。JVM のメソッドディスクリプタには戻り値の型が含まれるため、古いディスクリプタでは解決できなくなり、呼び出しは `NoSuchMethodError` で失敗します。`getPackageInfo` と `getApplicationInfo` は変わって*いない*ことに注意してください。
 
-## まとめ
+この変更は Android 17 に限ったものではありません。`android15-release` の時点で、すでに 4 引数の権限メソッドのシグネチャになっています。
 
-オリジナルの Shizuku は、仮想デバイス API への移行により Android 17 と互換性がありません。Yozuku の `Android17Compat` 層は完全な機能を取り戻し、最新の Android バージョンにおける昇格した権限でのアクセスの標準であり続けることを目指しています。
+## Android17Compat がしていること
+
+- 非公開のインターフェースを `ServiceManager` と `Class.forName` で解決し、プラットフォームが実際に公開しているメソッドに対して、引数の形の候補を順に試します。
+- 引数の型が**完全に**一致することを条件にし、すでに試した候補と同じ形の候補は試しません。同じ引数の型に当てはまる 2 つの引数リストは、別の候補にはなりません。リフレクションでは区別できないため、それを別の候補として扱うと、誤った順序が黙って通ってしまいます。
+- `IllegalArgumentException` は「この形はこのメソッドに合わない」と解釈して次の候補を試します。`InvocationTargetException` はプラットフォームが応答した結果と解釈し、推測の誤りとして再試行はしません。
+- 解決したメソッドを、うまくいった形と一緒にキャッシュします。そのため推測は 1 回で済みます。どの候補も合わなかった場合は、応答に見える拒否を返すのではなく、サーバーのログで報告します。
+- `grantRuntimePermission` と `revokeRuntimePermission` は、プラットフォームに届いたかどうかを返します。そのため、権限の付与が知らないうちに失われることはありません。
+
+## 既知の制限
+
+- 対応しているのは 15、16、17 の形です。15 より前の形も、引数の数で区別できる場合は古い候補として残していますが、対象ではありません。
+- このレイヤーは Android 17 の SDK でコンパイルできることを確認し、プラットフォームのソースと照らし合わせてレビューしています。実機での動作はまだ確認していません。

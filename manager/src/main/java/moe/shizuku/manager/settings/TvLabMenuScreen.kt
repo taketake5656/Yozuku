@@ -12,13 +12,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,21 +29,28 @@ import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.Text as TvText
 import moe.shizuku.manager.R
 import moe.shizuku.manager.module.ModuleSettings
+import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.ui.compose.ShizukuIcon
-import moe.shizuku.manager.utils.NightDogApis
 import rikka.shizuku.Shizuku
 
 @Composable
 fun TvLabMenuScreen(
     onNavigateUp: () -> Unit
 ) {
-    val context = LocalContext.current
     var connectorEnabled by remember { mutableStateOf(ModuleSettings.isConnectorEnabled()) }
-    var tapiEnabled by remember { mutableStateOf(ModuleSettings.isTapiEnabled()) }
-    var nightDogEnabled by remember { mutableStateOf(try { NightDogApis.isEnabled() } catch (_: Throwable) { false }) }
+    var nightDogEnabled by remember { mutableStateOf(NightDogClient.isEnabled()) }
     var showUnsafeDialog by remember { mutableStateOf(false) }
-    var showTapiWarningDialog by remember { mutableStateOf(false) }
     var showNightDogDialog by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        val receivedListener = Shizuku.OnBinderReceivedListener {
+            nightDogEnabled = NightDogClient.isEnabled()
+        }
+        Shizuku.addBinderReceivedListener(receivedListener)
+        onDispose {
+            Shizuku.removeBinderReceivedListener(receivedListener)
+        }
+    }
 
     Row(modifier = Modifier.fillMaxSize().padding(32.dp)) {
         Column(
@@ -86,24 +93,7 @@ fun TvLabMenuScreen(
                     checked = nightDogEnabled,
                     onToggle = {
                         if (!nightDogEnabled) showNightDogDialog = true
-                        else { NightDogApis.setEnabled(false); nightDogEnabled = false }
-                    }
-                )
-            }
-
-            item {
-                TvLabToggleCard(
-                    title = stringResource(R.string.tapi_title),
-                    summary = stringResource(R.string.tapi_summary),
-                    checked = tapiEnabled,
-                    onToggle = {
-                        if (!tapiEnabled) showTapiWarningDialog = true
-                        else {
-                            tapiEnabled = false
-                            moe.shizuku.tapi.TapiSettings.init(context)
-                            ModuleSettings.setTapiEnabled(false)
-                            moe.shizuku.tapi.TapiSettings.setEnabled(false)
-                        }
+                        else { NightDogClient.setEnabled(false); nightDogEnabled = false }
                     }
                 )
             }
@@ -164,50 +154,6 @@ fun TvLabMenuScreen(
         )
     }
 
-    if (showTapiWarningDialog) {
-        AlertDialog(
-            onDismissRequest = { showTapiWarningDialog = false },
-            title = { TvText(stringResource(R.string.tapi_warning_title)) },
-            text = { TvText(stringResource(R.string.tapi_warning_message)) },
-            confirmButton = {
-                TvSurface(
-                    onClick = {
-                        showTapiWarningDialog = false
-                        tapiEnabled = true
-                        moe.shizuku.tapi.TapiSettings.init(context)
-                        ModuleSettings.setTapiEnabled(true)
-                        moe.shizuku.tapi.TapiSettings.setEnabled(true)
-                    },
-                    shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.small),
-                    colors = TvClickableSurfaceDefaults.colors(
-                        containerColor = TvMaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
-                    TvText(
-                        text = stringResource(android.R.string.ok),
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-                    )
-                }
-            },
-            dismissButton = {
-                TvSurface(
-                    onClick = { showTapiWarningDialog = false },
-                    shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.small),
-                    colors = TvClickableSurfaceDefaults.colors(
-                        containerColor = TvMaterialTheme.colorScheme.surfaceVariant
-                    )
-                ) {
-                    TvText(
-                        text = stringResource(android.R.string.cancel),
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-                    )
-                }
-            },
-            containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
-            shape = TvMaterialTheme.shapes.extraLarge
-        )
-    }
-
     if (showNightDogDialog) {
         AlertDialog(
             onDismissRequest = { showNightDogDialog = false },
@@ -218,7 +164,7 @@ fun TvLabMenuScreen(
                     onClick = {
                         showNightDogDialog = false
                         nightDogEnabled = true
-                        NightDogApis.setEnabled(true)
+                        NightDogClient.setEnabled(true)
                     },
                     shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.small),
                     colors = TvClickableSurfaceDefaults.colors(

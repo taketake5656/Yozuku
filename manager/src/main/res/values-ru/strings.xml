@@ -3,7 +3,18 @@
     <string name="home_status_service_is_running">Yozuku запущен</string>
     <string name="home_status_service_not_running">Yozuku не запущен</string>
     <string name="home_status_service_version">Версия %2$s, %1$s</string>
+    <string name="home_start_method_title">Запуск службы от</string>
+    <string name="home_start_method_message">Доступны и root, и ADB. Выберите, от какого пользователя запускать службу Yozuku.</string>
+    <string name="home_start_method_root">Root</string>
+    <string name="home_start_method_adb">ADB (shell uid 2000)</string>
     <string name="home_status_service_version_update"><![CDATA[Версия %2$s, %1$s<br>Запустите снова для обновления до версии %3$s]]></string>
+    <string name="home_hero_adb_full">ADB: полный доступ</string>
+    <string name="home_hero_adb_limited">ADB: ограниченный доступ</string>
+
+    <!-- Home - Sections -->
+    <string name="home_section_manage">Управление</string>
+    <string name="home_section_start">Запуск</string>
+    <string name="home_section_info">Информация</string>
 
     <!-- Home - Adb -->
     <string name="home_adb_title"><![CDATA[Начните с подключения к компьютеру]]></string>
@@ -132,11 +143,16 @@
     <string name="settings_start_on_boot">Запускать при загрузке (root)</string>
     <string name="settings_start_on_boot_summary">Для устройств с root-правами Yozuku может запускаться автоматически при включении</string>
     <string name="settings_use_system_color">Использовать цвет системной темы</string>
+    <string name="settings_category_startup_summary">Автоматический запуск Yozuku</string>
+    <string name="settings_category_appearance_summary">Тема, ночной режим и цвета</string>
+    <string name="settings_category_language_summary">Язык приложения и перевод</string>
+    <string name="settings_category_modules_summary">Доступ к модулям и разрешения</string>
 
     <!-- ADB modules -->
     <string name="modules_title">ADB-модули</string>
     <string name="modules_settings_title">Модули</string>
     <string name="modules_settings_summary">Устанавливайте ZIP-модули и запускайте их действия через активный сервер Yozuku ADB/root</string>
+    <string name="settings_modules_recommendations">Рекомендации</string>
     <string name="modules_header_summary">Установлено: %1$d, включено: %2$d</string>
     <string name="modules_version_label">Версия: %s</string>
     <string name="modules_author_label">Автор: %s</string>
@@ -254,13 +270,9 @@
     <string name="lab_features_summary">Экспериментальные возможности</string>
     <string name="shizuku_connectors_title">Подключатели Yozuku</string>
     <string name="shizuku_connectors_summary">Разрешить плагинам активировать Yozuku</string>
-    <string name="tapi_title">TAPI</string>
-    <string name="tapi_summary">Включить Termux API и мост командной строки</string>
-    <string name="tapi_warning_title">Включить TAPI?</string>
-    <string name="tapi_warning_message">TAPI позволяет авторизованным клиентам управлять разрешениями Shizuku и запускать команды. Включайте только если доверяете клиенту.</string>
-    <string name="nightdog_title">NightDog (бета)</string>
-    <string name="nightdog_summary">Лёгкий системный монитор с нулевым энергопотреблением</string>
-    <string name="nightdog_description">NightDog мониторит здоровье сервера через inotify (без опроса). Работает как shell-процесс.</string>
+    <string name="nightdog_title">Сторожевой таймер NightDog</string>
+    <string name="nightdog_summary">Мониторинг здоровья сервера и автовосстановление при зависаниях</string>
+    <string name="nightdog_description">NightDog отслеживает отзывчивость главного потока сервера через периодические сигналы (heartbeat) и состояние критических системных служб (package, activity, user, appops) через Binder linkToDeath. При зависании сервера или потере служб NightDog перезапускает процесс через загрузчик.</string>
     <string name="unsafe_warning_title">Внимание</string>
     <string name="unsafe_warning_message">Включение этой функции НЕБЕЗОПАСНО. Вы уверены?</string>
 
@@ -299,6 +311,7 @@
     <string name="modules_catalog_sort_oldest">Старые</string>
     <string name="modules_catalog_sort_stars">По звёздам</string>
     <string name="modules_catalog_sort_official">Официальные</string>
+    <string name="modules_outdated">Устарел</string>
     <string name="modules_catalog_install_sources">Установить из исходников</string>
     <string name="modules_catalog_install_release">Скачать ZIP-релиз</string>
     <string name="modules_catalog_install_description">Выберите способ установки этого модуля:</string>

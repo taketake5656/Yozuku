@@ -118,6 +118,10 @@ Official API and samples are available at: <https://github.com/RikkaApps/Shizuku
 ### Build
 
 - Clone with `git clone --recurse-submodules`
+- The native parts are written in Rust, so in addition to the Android SDK and NDK you need:
+  - [rustup](https://rustup.rs/) (stable Rust). On Windows, also install the "Desktop development with C++" workload of Visual Studio Build Tools
+  - Android targets: `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`
+  - [cargo-ndk](https://github.com/bbqsrc/cargo-ndk): `cargo install cargo-ndk --locked`
 - Build with Gradle: `./gradlew :manager:assembleDebug`
 
 The `:manager:assembleDebug` task generates a debuggable server. Ensure "Always install with package manager" is checked in Android Studio to use the latest server code during debugging.
@@ -133,10 +137,3 @@ All code is licensed under Apache 2.0.
 ## Credits 
 
 [**Razgame**](https://github.com/RazGame/Shizuku) for [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842)
-
-
-## STOP AND READ
-Currently i'm fully rewriting nightzuku. If you want to test new versions, go to [Nightzuku-private](https://github.com/kerneldroid/Nightzuku-private) repo. Nightzuku-private is closed-source. This repo temporarily will not receive updates.
-
-
-And new info: my laptop is died. Updates suspended. Write your Issues to nightzuku-private, not this repo (I'll fix they in the future).

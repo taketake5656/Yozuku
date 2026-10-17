@@ -7,29 +7,25 @@ import android.os.Parcel
 import moe.shizuku.manager.utils.Logger.LOGGER
 import rikka.shizuku.Shizuku
 
-import moe.shizuku.manager.module.ModuleSettings
-
 object ShellBinderRequestHandler {
 
+    const val ACTION_REQUEST_BINDER_NIGHT = "kerneldroid.nightzuku.intent.action.REQUEST_BINDER"
+    const val ACTION_REQUEST_BINDER_LEGACY = "rikka.shizuku.intent.action.REQUEST_BINDER"
+
+    fun isSupportedAction(action: String?): Boolean {
+        return action == ACTION_REQUEST_BINDER_NIGHT || action == ACTION_REQUEST_BINDER_LEGACY
+    }
+
     fun handleRequest(context: Context, intent: Intent): Boolean {
-        if (intent.action != "rikka.shizuku.intent.action.REQUEST_BINDER") {
+        if (!isSupportedAction(intent.action)) {
             return false
         }
 
         val binder = intent.getBundleExtra("data")?.getBinder("binder") ?: return false
 
-        if (!ModuleSettings.isTapiEnabled()) {
-            try {
-                val emptyData = Parcel.obtain()
-                binder.transact(2, emptyData, null, IBinder.FLAG_ONEWAY)
-                emptyData.recycle()
-            } catch (ignored: Throwable) {}
-            return true
-        }
-
         val shizukuBinder = Shizuku.getBinder()
         if (shizukuBinder == null) {
-            LOGGER.w("Binder not received or Shizuku service not running")
+            LOGGER.w("Binder not received or Nightzuku service not running")
         }
 
         val data = Parcel.obtain()

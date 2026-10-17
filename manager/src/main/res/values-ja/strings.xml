@@ -6,7 +6,18 @@
     <string name="home_status_service_is_running">%1$s は実行中です</string>
     <string name="home_status_service_not_running">%1$s は実行されていません</string>
     <string name="home_status_service_version">バージョン %2$s、%1$s</string>
+    <string name="home_start_method_title">サービスの起動方法</string>
+    <string name="home_start_method_message">root と ADB のどちらも使えます。Yozuku のサービスをどちらの権限で起動するか選んでください。</string>
+    <string name="home_start_method_root">root</string>
+    <string name="home_start_method_adb">ADB（shell uid 2000）</string>
     <string name="home_status_service_version_update"><![CDATA[バージョン %2$s、%1$s<br>再度起動するとバージョン %3$s に更新されます]]></string>
+    <string name="home_hero_adb_full">ADB: フルアクセス</string>
+    <string name="home_hero_adb_limited">ADB: 制限付きアクセス</string>
+
+    <!-- Home - Sections -->
+    <string name="home_section_manage">管理</string>
+    <string name="home_section_start">起動</string>
+    <string name="home_section_info">情報</string>
 
     <!-- Home - Adb -->
     <string name="home_adb_title"><![CDATA[パソコンに接続して起動]]></string>
@@ -132,11 +143,16 @@
     <string name="settings_start_on_boot">起動時に開始（root）</string>
     <string name="settings_start_on_boot_summary">root 化済みデバイスでは、Yozuku を起動時に自動で開始できます</string>
     <string name="settings_use_system_color">システムのテーマカラーを使用</string>
+    <string name="settings_category_startup_summary">Yozuku を自動で起動</string>
+    <string name="settings_category_appearance_summary">テーマ、ダークモード、色</string>
+    <string name="settings_category_language_summary">アプリの言語と翻訳</string>
+    <string name="settings_category_modules_summary">モジュールのアクセスと権限</string>
 
     <!-- ADB modules -->
     <string name="modules_title">ADB モジュール</string>
     <string name="modules_settings_title">モジュール</string>
     <string name="modules_settings_summary">ZIP モジュールをインストールし、動作中の Yozuku ADB/root サーバーを通じてアクションを実行します</string>
+    <string name="settings_modules_recommendations">おすすめ</string>
     <string name="modules_header_summary">%1$d 個インストール済み、%2$d 個有効</string>
     <string name="modules_version_label">バージョン: %s</string>
     <string name="modules_author_label">作者: %s</string>
@@ -254,13 +270,9 @@
     <string name="lab_features_summary">実験的な機能</string>
     <string name="shizuku_connectors_title">Yozuku コネクタ</string>
     <string name="shizuku_connectors_summary">プラグインによる Yozuku の起動を許可します</string>
-    <string name="tapi_title">TAPI</string>
-    <string name="tapi_summary">Termux API とコマンドライン実行ブリッジを有効にします</string>
-    <string name="tapi_warning_title">TAPI を有効にしますか？</string>
-    <string name="tapi_warning_message">TAPI を使うと、許可されたクライアントが Shizuku の権限を管理したりコマンドを実行したりできるようになります。信頼できるクライアントの場合にのみ有効にしてください。</string>
-    <string name="nightdog_title">NightDog ベータ版</string>
-    <string name="nightdog_summary">消費電力ゼロの軽量システムモニター</string>
-    <string name="nightdog_description">NightDog は inotify（ポーリングなし）を使ってサーバーの状態を監視します。シェルプロセスとして動作します。</string>
+    <string name="nightdog_title">NightDog ウォッチドッグ</string>
+    <string name="nightdog_summary">サーバーの状態を監視し、応答停止やシステムサービスの停止から復旧します</string>
+    <string name="nightdog_description">NightDog は、定期的なハートビートでサーバーのメインスレッドを監視し、重要なシステムサービス（package、activity、user、appops）を Binder の linkToDeath で追跡します。サーバーが応答しなくなったり、重要なサービスとの接続が失われたりすると、NightDog が停止したプロセスを終了させ、スターターデーモンが自動で再起動できるようにします。</string>
     <string name="unsafe_warning_title">警告</string>
     <string name="unsafe_warning_message">この機能を有効にするのは安全ではありません。本当によろしいですか？</string>
 
@@ -299,6 +311,7 @@
     <string name="modules_catalog_sort_oldest">古い順</string>
     <string name="modules_catalog_sort_stars">スター数</string>
     <string name="modules_catalog_sort_official">公式</string>
+    <string name="modules_outdated">長期間更新なし</string>
     <string name="modules_catalog_install_sources">ソースからインストール</string>
     <string name="modules_catalog_install_release">リリース ZIP をダウンロード</string>
     <string name="modules_catalog_install_description">このモジュールのインストール方法を選択してください:</string>

@@ -4,12 +4,12 @@ import android.app.ActivityManagerHidden
 import android.app.ActivityManagerHidden.UID_OBSERVER_ACTIVE
 import android.app.ActivityManagerHidden.UID_OBSERVER_CACHED
 import android.app.ActivityManagerHidden.UID_OBSERVER_GONE
-import android.app.ActivityManagerHidden.UID_OBSERVER_IDLE
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.RemoteException
 import android.text.TextUtils
 import androidx.annotation.RequiresApi
+import java.util.concurrent.Executors
 import rikka.hidden.compat.ActivityManagerApis
 import rikka.hidden.compat.PackageManagerApis
 import rikka.hidden.compat.adapter.ProcessObserverAdapter
@@ -22,10 +22,18 @@ object BinderSender {
 
     private val logger = Logger("BinderSender")
 
-    private const val PERMISSION_MANAGER = "moe.shizuku.manager.permission.MANAGER"
-    private const val PERMISSION = "moe.shizuku.manager.permission.API_V23"
-
+    @Volatile
     private var shizukuService: ShizukuService? = null
+
+    @Volatile
+    private var nightEndpoint: NightServiceEndpoint? = null
+
+    private val dispatchExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "night-binder-sender").apply {
+            isDaemon = true
+            priority = Thread.MAX_PRIORITY
+        }
+    }
 
     private class ProcessObserver : ProcessObserverAdapter() {
 
@@ -44,7 +52,7 @@ object BinderSender {
                 }
             }
 
-            sendBinder(uid, pid)
+            dispatchAsync(uid, pid)
         }
 
         override fun onProcessDied(pid: Int, uid: Int) {
@@ -67,11 +75,17 @@ object BinderSender {
                 }
             }
 
-            sendBinder(uid, pid)
+            dispatchAsync(uid, pid)
         }
 
         companion object {
             private val startedPids = HashSet<Int>()
+
+            fun clear() {
+                synchronized(startedPids) {
+                    startedPids.clear()
+                }
+            }
         }
     }
 
@@ -93,12 +107,6 @@ object BinderSender {
             }
         }
 
-        @Throws(RemoteException::class)
-        override fun onUidIdle(uid: Int, disabled: Boolean) {
-            logger.d("onUidIdle: uid=%d, disabled=%s", uid, disabled.toString())
-            uidStarts(uid)
-        }
-
         override fun onUidGone(uid: Int, disabled: Boolean) {
             logger.d("onUidGone: uid=%d, disabled=%s", uid, disabled.toString())
             uidGone(uid)
@@ -114,7 +122,7 @@ object BinderSender {
                 logger.v("Uid %d starts", uid)
             }
 
-            sendBinder(uid, -1)
+            dispatchAsync(uid, -1)
         }
 
         private fun uidGone(uid: Int) {
@@ -127,12 +135,29 @@ object BinderSender {
 
         companion object {
             private val startedUids = HashSet<Int>()
+
+            fun clear() {
+                synchronized(startedUids) {
+                    startedUids.clear()
+                }
+            }
+        }
+    }
+
+    private fun dispatchAsync(uid: Int, pid: Int) {
+        dispatchExecutor.execute {
+            try {
+                sendBinder(uid, pid)
+            } catch (t: Throwable) {
+                logger.w(t, "Failed to dispatch binder to uid=%d pid=%d", uid, pid)
+            }
         }
     }
 
     @Throws(RemoteException::class)
     private fun sendBinder(uid: Int, pid: Int) {
         val service = shizukuService ?: return
+        val night = nightEndpoint ?: return
         val packages = PackageManagerApis.getPackagesForUidNoThrow(uid)
         if (packages.isEmpty()) {
             return
@@ -147,31 +172,37 @@ object BinderSender {
                 packageName,
                 PackageManager.GET_PERMISSIONS.toLong(),
                 userId
-            )
-            val requestedPermissions = packageInfo?.requestedPermissions ?: continue
+            ) ?: continue
+            val requestedPermissions = packageInfo.requestedPermissions ?: continue
 
-            if (requestedPermissions.contains(PERMISSION_MANAGER)) {
+            if (requestedPermissions.contains(ServerConstants.MANAGER_PERMISSION)) {
                 val granted = if (pid == -1) {
-                    Android17Compat.checkPermission(PERMISSION_MANAGER, uid) == PackageManager.PERMISSION_GRANTED
+                    Android17Compat.checkPermission(ServerConstants.MANAGER_PERMISSION, uid) == PackageManager.PERMISSION_GRANTED
                 } else {
-                    ActivityManagerApis.checkPermission(PERMISSION_MANAGER, pid, uid) == PackageManager.PERMISSION_GRANTED
+                    ActivityManagerApis.checkPermission(ServerConstants.MANAGER_PERMISSION, pid, uid) == PackageManager.PERMISSION_GRANTED
                 }
 
-                if (granted && !sentManager) {
-                    ShizukuService.sendBinderToManager(service, userId)
+                if (granted && userId == 0 && !sentManager) {
+                    ShizukuService.sendBinderToManager(service, night, userId)
                     sentManager = true
                 }
             }
 
-            if (requestedPermissions.contains(PERMISSION)) {
-                ShizukuService.sendBinderToUserApp(service, packageName, userId)
+            val wire = ClientRouting.route(packageInfo)
+            if (wire != null) {
+                ShizukuService.sendBinderToClientPackage(packageInfo, wire, service, night, userId)
             }
         }
     }
 
     @JvmStatic
-    fun register(shizukuService: ShizukuService) {
+    fun register(shizukuService: ShizukuService, nightEndpoint: NightServiceEndpoint = shizukuService.nightEndpoint) {
         this.shizukuService = shizukuService
+        this.nightEndpoint = nightEndpoint
+        ProcessObserver.clear()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            UidObserver.clear()
+        }
 
         try {
             ActivityManagerApis.registerProcessObserver(ProcessObserver())
@@ -180,7 +211,7 @@ object BinderSender {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            var flags = UID_OBSERVER_GONE or UID_OBSERVER_IDLE or UID_OBSERVER_ACTIVE
+            var flags = UID_OBSERVER_GONE or UID_OBSERVER_ACTIVE
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 flags = flags or UID_OBSERVER_CACHED
             }

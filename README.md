@@ -122,13 +122,17 @@ Yozuku はプロキシとして動作し、アプリからのリクエストを�
 ### ビルド
 
 - `git clone --recurse-submodules` でクローンします
+- ネイティブ部分は Rust で書かれているため、Android SDK・NDK に加えて次のものが必要です
+  - [rustup](https://rustup.rs/)（stable の Rust）。Windows では Visual Studio Build Tools の「C++ によるデスクトップ開発」も必要です
+  - Android 向けターゲット: `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`
+  - [cargo-ndk](https://github.com/bbqsrc/cargo-ndk): `cargo install cargo-ndk --locked`
 - Gradle でビルドします: `./gradlew :manager:assembleDebug`
 
 `:manager:assembleDebug` タスクはデバッグ可能なサーバーを生成します。デバッグ時に最新のサーバーコードを使うには、Android Studio で「Always install with package manager」にチェックが入っていることを確認してください。
 
 ### リリース版のビルド（GitHub Actions）
 
-`.github/workflows/app.yml` で、署名済みのリリース版をビルドできます。署名にはリポジトリの Secrets（`KEYSTORE`、`KEYSTORE_PASSWORD`、`KEYSTORE_ALIAS`、`KEYSTORE_ALIAS_PASSWORD`）を使用します。Secrets が未設定の場合はデバッグ鍵で署名されます。
+`.github/workflows/release.yml` で、署名済みのリリース版をビルドできます。署名にはリポジトリの Secrets（`KEYSTORE`、`KEYSTORE_PASSWORD`、`KEYSTORE_ALIAS`、`KEYSTORE_ALIAS_PASSWORD`）を使用します。Secrets が未設定の場合はビルドが失敗します。
 
 - **GitHub Release として公開する**: `v` で始まるタグを push します。ビルドした APK が添付されたリリースが自動で作成されます。
 
@@ -137,7 +141,7 @@ Yozuku はプロキシとして動作し、アプリからのリクエストを�
   git push origin v13.7.1-ja1
   ```
 
-- **ビルドだけ行う**: GitHub の Actions タブで「App」ワークフローを選び、「Run workflow」から手動で実行します。APK は実行結果の Artifacts からダウンロードできます。
+- **ビルドだけ行う**: GitHub の Actions タブで「Release」ワークフローを選び、「Run workflow」から手動で実行します。APK は実行結果の Artifacts からダウンロードできます。デバッグ版だけが必要な場合は「App」ワークフローを使います。
 
 ## ライセンス
 
@@ -150,10 +154,3 @@ Yozuku はプロキシとして動作し、アプリからのリクエストを�
 ## クレジット
 
 [**Razgame**](https://github.com/RazGame/Shizuku) — [アプリ一覧の修正](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842)
-
-
-## 必ずお読みください（原作者 kerneldroid より）
-現在、Nightzuku を全面的に書き直しています。新しいバージョンを試したい場合は、[Nightzuku-private](https://github.com/kerneldroid/Nightzuku-private) リポジトリをご覧ください。Nightzuku-private はクローズドソースです。このリポジトリには当面アップデートが行われません。
-
-
-さらにお知らせ: ノートパソコンが壊れてしまいました。アップデートは停止中です。Issue はこのリポジトリではなく nightzuku-private に投稿してください（将来的に対応します）。
