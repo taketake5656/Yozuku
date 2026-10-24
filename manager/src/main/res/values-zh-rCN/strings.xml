@@ -1,4 +1,5 @@
 <resources>
+
     <!-- Home - Status -->
     <string name="home_status_service_is_running">%1$s 正在运行</string>
     <string name="home_status_service_not_running">%1$s 未运行</string>
@@ -18,9 +19,7 @@
 
     <!-- Home - Adb -->
     <string name="home_adb_title"><![CDATA[通过连接电脑启动]]></string>
-    <string name="home_adb_description"><![CDATA[对于未 Root 的设备，需要使用 adb 启动 Yozuku（需要连接电脑）。每次重启设备后都需要重复此操作。请<b><a href=\"%1$s\">阅读帮助</a></b>。]]>
-
-注意：Yozuku 是 Shizuku 的现代继任者。为避免冲突，请务必先卸载旧版官方 Shizuku 应用。</string>
+    <string name="home_adb_description"><![CDATA[对于未 Root 的设备，需要使用 adb 启动 Yozuku（需要连接电脑）。每次重启设备后都需要重复此操作。请<b><a href=\"%1$s\">阅读帮助</a></b>。]]></string>
     <string name="home_adb_button_view_help">阅读帮助</string>
     <string name="home_adb_button_view_command">查看命令</string>
     <string name="home_adb_dialog_view_command_message"><![CDATA[<font face="monospace">%1$s</font><br><br>* 还有其他注意事项，请确认已先阅读帮助。]]></string>
@@ -29,9 +28,7 @@
 
     <!-- Home - Wireless Adb -->
     <string name="home_wireless_adb_title"><![CDATA[通过无线调试启动]]></string>
-    <string name="home_wireless_adb_description"><![CDATA[在 Android 11 及以上版本中，可以启用无线调试，无需连接电脑即可直接在设备上启动 Yozuku。<p>请先查看分步指南。]]>
-
-注意：Yozuku 是 Shizuku 的现代继任者。为避免冲突，请务必先卸载旧版官方 Shizuku 应用。</string>
+    <string name="home_wireless_adb_description"><![CDATA[在 Android 11 及以上版本中，可以启用无线调试，无需连接电脑即可直接在设备上启动 Yozuku。<p>请先查看分步指南。]]></string>
     <string name="home_wireless_adb_description_pre_11"><![CDATA[在 Android 11 之前的版本中，需要连接电脑才能启用无线调试。]]></string>
     <string name="home_wireless_adb_view_guide_button">分步指南</string>
     <string name="home_local_network_title">本地网络访问</string>
@@ -75,9 +72,7 @@
 
     <!-- Home - Root -->
     <string name="home_root_title"><![CDATA[启动（适用于已 Root 的设备）]]></string>
-    <string name="home_root_description"><![CDATA[此外，Yozuku 可以在开机时自动启动。如果没有自动启动，请检查系统或第三方工具是否限制了 Yozuku。<br>可参考 %s。]]>
-
-注意：Yozuku 是 Shizuku 的现代继任者。为避免冲突，请务必先卸载旧版官方 Shizuku 应用。</string>
+    <string name="home_root_description"><![CDATA[此外，Yozuku 可以在开机时自动启动。如果没有自动启动，请检查系统或第三方工具是否限制了 Yozuku。<br>可参考 %s。]]></string>
     <string name="home_root_description_sui"><![CDATA[如果你在使用 Magisk，可以尝试 %1$s。对于 Root 用户，它最终将取代 Yozuku。注意，现有应用需要稍作修改才能使用 %2$s。]]></string>
     <string name="home_root_button_start">启动</string>
     <string name="home_root_button_restart">重新启动</string>
@@ -167,15 +162,27 @@
     <string name="modules_permission_service">运行服务</string>
     <string name="modules_permission_service_summary">在同时启用后台操作时允许运行 service.sh。</string>
     <string name="modules_permission_web_bridge">WebUI shell 桥接</string>
-    <string name="modules_permission_web_bridge_summary">仅对本地 WebUI 且仅在 WebView 互联网访问关闭时公开 window.Shizuku。</string>
+    <string name="modules_permission_web_bridge_summary">仅对本地 WebUI 且仅在 WebView 互联网访问关闭时公开 window.Nightzuku。</string>
     <string name="modules_permission_web_network">WebView 互联网访问</string>
     <string name="modules_permission_web_network_summary">允许 HTTPS 导航和资源加载。这会禁止该 WebView 公开 shell 桥接。</string>
     <string name="modules_permission_web_download">WebUI download()</string>
     <string name="modules_permission_web_download_summary">允许通过 HTTPS 将文件下载到 WebUI 文件夹（index.html 除外）。</string>
     <string name="modules_background_actions">允许后台操作</string>
-    <string name="modules_background_actions_summary">允许已安装的模块在完全访问模式下请求后台 ADB 任务</string>
+    <string name="modules_background_actions_summary">允许已安装的模块在后台运行 service.sh 脚本</string>
     <string name="modules_background_allowed">允许后台</string>
     <string name="modules_background_blocked">禁止后台</string>
+    <string name="modules_background_check_title">后台模块检查（NightDog）</string>
+    <string name="modules_background_check_summary">在后台检查模块完整性、service.sh 状态和更新</string>
+    <string name="modules_background_check_short">检查模块</string>
+    <string name="modules_background_check_run_now">立即检查模块和服务器</string>
+    <string name="modules_background_check_running">正在检查模块和服务器…</string>
+    <string name="modules_background_check_never">点按以检查模块状态、后台服务和更新</string>
+    <string name="modules_background_check_report_summary">正常：%1$d/%2$d • 更新：%3$d • 问题：%4$d</string>
+    <string name="modules_background_check_toast">已检查：%1$d/%2$d 正常，%3$d 个更新</string>
+    <string name="modules_health_ok">正常</string>
+    <string name="modules_health_issue">检测到问题</string>
+    <string name="modules_update_available_chip">更新：v%s</string>
+    <string name="modules_update_success">已更新 %1$s（%2$s）</string>
     <string name="modules_install_zip">安装 ZIP</string>
     <string name="modules_empty_title">未安装任何模块</string>
     <string name="modules_empty_summary">ADB 模块使用 KernelSU/Magisk 风格的 ZIP，包含 module.prop，以及可选的横幅、WebUI、action.sh 和 service.sh。</string>
@@ -212,6 +219,7 @@
     <string name="modules_recommand_webui_summary">在 WebUI 执行 shell 命令前显示确认对话框。</string>
     <string name="modules_recommand_action">操作的 ReCommand</string>
     <string name="modules_recommand_action_summary">在运行 action.sh 前显示确认对话框。</string>
+    <string name="modules_update_action">更新</string>
 
     <!-- About -->
     <string name="action_about">关于</string>
@@ -243,6 +251,7 @@
     <string name="permission_label">访问 Yozuku</string>
     <string name="permission_description">允许应用使用 Yozuku。</string>
     <string name="permission_warning_template"><![CDATA[要允许<b>%1$s</b>%2$s吗？]]></string>
+    <string name="grant_dialog_button_allow_onetime">仅限这一次</string>
     <string name="grant_dialog_button_allow_always">始终允许</string>
     <string name="grant_dialog_button_deny">拒绝</string>
 
@@ -267,14 +276,18 @@
     <string name="lab_features_summary">实验性功能</string>
     <string name="shizuku_connectors_title">Yozuku 连接器</string>
     <string name="shizuku_connectors_summary">允许插件激活 Yozuku</string>
+    <string name="nightdog_section_title">NightDog 与模块监控</string>
     <string name="nightdog_title">NightDog 看门狗</string>
     <string name="nightdog_summary">监控服务器状态，并从卡死或系统服务停止中恢复</string>
     <string name="nightdog_description">NightDog 通过定期心跳监控服务器主线程，并使用 Binder linkToDeath 跟踪关键系统服务（package、activity、user、appops）。如果服务器卡死或失去关键绑定，NightDog 会终止卡住的进程，以便启动守护进程自动重启它。</string>
+    <string name="nightdog_status_active_summary">NightDog 运行中（服务：%1$d，重新绑定：%2$d）</string>
+    <string name="nightdog_status_inactive_summary">NightDog 未运行</string>
     <string name="unsafe_warning_title">警告</string>
     <string name="unsafe_warning_message">启用此功能是不安全的。确定要启用吗？</string>
 
     <!-- Update Settings -->
-    <string name="update_settings_title">更新设置</string>
+    <string name="update_settings_title">更新与检查设置</string>
+    <string name="update_settings_entry_summary">配置后台模块检查、更新频率、目录和 GitHub 令牌</string>
     <string name="update_settings_catalog">模块目录</string>
     <string name="update_settings_catalog_enabled">启用目录</string>
     <string name="update_settings_catalog_enabled_summary">显示从 GitHub Topics 发现的模块</string>
@@ -325,9 +338,8 @@
     <string name="modules_catalog_view_github">在 GitHub 上查看</string>
     <string name="modules_catalog_skip_token">跳过</string>
     <string name="modules_catalog_open">打开目录</string>
+
     <string name="modules_catalog_installed">已安装</string>
-    <string name="modules_catalog_update">更新</string>
-    <string name="modules_catalog_back">返回</string>
     <string name="modules_catalog_danger_title">可能不安全的模块</string>
     <string name="modules_catalog_danger_message">此模块包含异常大的内容，可能会导致问题：</string>
     <string name="modules_catalog_danger_confirm">仍要继续吗？</string>
@@ -348,4 +360,28 @@
     <string name="wear_catalog_sort_official">官方</string>
     <string name="wear_catalog_sort_by">排序方式</string>
     <string name="wear_catalog_filter">筛选</string>
+    <string name="update_settings_frequency_on_start">服务器启动时</string>
+    <string name="update_settings_frequency_6h">每 6 小时</string>
+    <string name="update_settings_auto_update">自动更新模块</string>
+    <string name="update_settings_auto_update_summary">通过 NightDog 在后台自动安装模块更新</string>
+    <string name="update_settings_wifi_only">仅限 Wi-Fi / 不按流量计费的网络</string>
+    <string name="update_settings_wifi_only_summary">仅在不按流量计费的网络上进行后台更新检查和自动更新</string>
+    <string name="update_settings_notifications">更新通知</string>
+    <string name="update_settings_notifications_summary">发现模块更新或在后台安装更新时通知</string>
+    <string name="update_settings_notifications_channel">模块更新</string>
+    <string name="modules_updates_available_notification_title">有可用的模块更新（%d）</string>
+    <string name="modules_updates_available_notification_body">点按以查看更新日志并安装更新</string>
+    <string name="modules_auto_updated_notification_title">已自动更新模块（%d）</string>
+    <string name="modules_update_all_button">全部更新（%d）</string>
+    <string name="modules_update_all_short">全部更新</string>
+    <string name="modules_update_all_progress">正在更新 %1$d/%2$d</string>
+    <string name="modules_update_all_result">已更新 %1$d/%2$d 个模块</string>
+    <string name="modules_update_version_transition">版本：%1$s → %2$s</string>
+    <string name="modules_update_changelog_title">更新日志</string>
+    <string name="modules_update_changelog_empty">模块作者未提供发布说明。</string>
+    <string name="modules_update_mode_default">默认</string>
+    <string name="modules_update_now">立即更新</string>
+    <string name="modules_update_pin">冻结版本</string>
+    <string name="modules_update_unpin">取消冻结版本</string>
+    <string name="modules_update_pinned_chip">已冻结更新</string>
 </resources>

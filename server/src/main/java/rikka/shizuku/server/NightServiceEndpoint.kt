@@ -6,7 +6,6 @@ import android.os.IBinder
 import android.os.Parcel
 import android.os.RemoteException
 import android.os.SystemProperties
-import android.system.Os
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -19,21 +18,14 @@ import moe.shizuku.server.IShizukuApplication
 import rikka.hidden.compat.PackageManagerApis
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.server.util.Logger
-import rikka.shizuku.server.util.UserHandleCompat
 
-/**
- * Native Nightzuku server Binder endpoint (`kerneldroid.nightzuku.INightService`).
- *
- * Uses flat Parcel transactions, per-UID capability masks, guarded `transactRemote`,
- * and a fast one-shot command executor (`execFast`) while sharing the unified
- * client/config/user-service core with the legacy Shizuku wire.
- */
 class NightServiceEndpoint(
     private val service: ShizukuService
 ) : Binder() {
 
     private val logger = Logger("NightEndpoint")
     private val nightCallbacks = ConcurrentHashMap<Int, IBinder>()
+    private val nightCallbackDeaths = ConcurrentHashMap<Int, IBinder.DeathRecipient>()
     private val execPool = Executors.newCachedThreadPool { r ->
         Thread(r, "night-exec").apply { isDaemon = true }
     }
@@ -177,7 +169,7 @@ class NightServiceEndpoint(
                 service.enforceManagerPermission("getUidCapabilities")
                 val targetUid = data.readInt()
                 val entry = service.configManager.find(targetUid)
-                val caps = TransactGuard.effectiveCapabilities(entry)
+                val caps = TransactGuard.effectiveCapabilities(entry, service.configManager.isAccessPaused())
                 reply!!.writeNoException()
                 reply.writeInt(caps)
                 return true
@@ -193,8 +185,34 @@ class NightServiceEndpoint(
                 reply!!.writeNoException()
                 return true
             }
+            NightProtocol.TRANSACTION_GET_ACCESS_PAUSED -> {
+                data.enforceInterface(NightProtocol.DESCRIPTOR)
+                service.enforceManagerPermission("getAccessPaused")
+                reply!!.writeNoException()
+                reply.writeInt(if (service.configManager.isAccessPaused()) 1 else 0)
+                return true
+            }
+            NightProtocol.TRANSACTION_SET_ACCESS_PAUSED -> {
+                data.enforceInterface(NightProtocol.DESCRIPTOR)
+                service.enforceManagerPermission("setAccessPaused")
+                val paused = data.readInt() != 0
+                service.setAccessPaused(paused)
+                reply!!.writeNoException()
+                return true
+            }
         }
         return super.onTransact(code, data, reply, flags)
+    }
+
+    private fun unlinkCallback(pid: Int) {
+        val oldBinder = nightCallbacks.remove(pid)
+        val oldDeath = nightCallbackDeaths.remove(pid)
+        if (oldBinder != null && oldDeath != null) {
+            try {
+                oldBinder.unlinkToDeath(oldDeath, 0)
+            } catch (_: Throwable) {
+            }
+        }
     }
 
     private fun handleAttach(data: Parcel, reply: Parcel) {
@@ -210,28 +228,45 @@ class NightServiceEndpoint(
             throw SecurityException("Package $packageName does not belong to calling uid $callingUid")
         }
 
+        unlinkCallback(callingPid)
         if (callbackBinder != null) {
-            nightCallbacks[callingPid] = callbackBinder
+            val recipient = IBinder.DeathRecipient {
+                if (nightCallbacks.remove(callingPid, callbackBinder)) {
+                    nightCallbackDeaths.remove(callingPid)
+                }
+                service.onClientProcessDied(callingUid, callingPid)
+            }
             try {
-                callbackBinder.linkToDeath({ nightCallbacks.remove(callingPid) }, 0)
+                callbackBinder.linkToDeath(recipient, 0)
+                nightCallbacks[callingPid] = callbackBinder
+                nightCallbackDeaths[callingPid] = recipient
             } catch (_: RemoteException) {
-                nightCallbacks.remove(callingPid)
+                nightCallbacks.remove(callingPid, callbackBinder)
+                nightCallbackDeaths.remove(callingPid, recipient)
             }
         }
 
-        // Bridge into ClientManager so both wires share a single unified client record
-        val bridgeApp = object : IShizukuApplication.Stub() {
+        val fallbackBinder = Binder()
+        val bridgeApp = object : IShizukuApplication {
+            override fun asBinder(): IBinder = callbackBinder ?: fallbackBinder
+
             override fun bindApplication(bundle: Bundle?) {
                 if (bundle == null) return
                 val allowed = bundle.getBoolean(ShizukuApiConstants.BIND_APPLICATION_PERMISSION_GRANTED, false)
                 val rationale = bundle.getBoolean(ShizukuApiConstants.BIND_APPLICATION_SHOULD_SHOW_REQUEST_PERMISSION_RATIONALE, false)
-                val caps = TransactGuard.effectiveCapabilities(service.configManager.find(callingUid))
+                val caps = TransactGuard.effectiveCapabilities(
+                    service.configManager.find(callingUid),
+                    service.configManager.isAccessPaused()
+                )
                 notifyPermissionChanged(callingUid, callingPid, allowed, rationale, caps)
             }
 
             override fun dispatchRequestPermissionResult(requestCode: Int, bundle: Bundle?) {
                 val allowed = bundle?.getBoolean(ShizukuApiConstants.REQUEST_PERMISSION_REPLY_ALLOWED, false) ?: false
-                val caps = TransactGuard.effectiveCapabilities(service.configManager.find(callingUid))
+                val caps = TransactGuard.effectiveCapabilities(
+                    service.configManager.find(callingUid),
+                    service.configManager.isAccessPaused()
+                )
                 notifyRequestPermissionResult(callingUid, callingPid, requestCode, allowed, caps)
             }
 
@@ -241,15 +276,16 @@ class NightServiceEndpoint(
         val record = service.attachNightClient(callingUid, callingPid, bridgeApp, packageName, clientProtocolVersion)
         val entry = service.configManager.find(callingUid)
         val isManager = service.checkCallerManagerPermission("attach", callingUid, callingPid)
+        val paused = service.configManager.isAccessPaused()
         val grantState = when {
-            isManager || (record != null && record.allowed) -> NightProtocol.STATE_GRANTED
+            isManager || (!paused && record != null && record.allowed) -> NightProtocol.STATE_GRANTED
             entry?.isDenied() == true -> NightProtocol.STATE_DENIED_PERMANENT
             else -> NightProtocol.STATE_UNDETERMINED
         }
         val capabilities = if (isManager) {
             NightProtocol.MASK_CAPABILITIES
         } else {
-            TransactGuard.effectiveCapabilities(entry)
+            TransactGuard.effectiveCapabilities(entry, paused)
         }
 
         reply.writeNoException()
@@ -281,12 +317,11 @@ class NightServiceEndpoint(
 
         val newData = Parcel.obtain()
         try {
-            newData.appendFrom(data, data.dataPosition(), data.dataAvail())
-        } catch (t: Throwable) {
-            newData.recycle()
-            throw IllegalArgumentException("Failed to copy transaction payload", t)
-        }
-        try {
+            try {
+                newData.appendFrom(data, data.dataPosition(), data.dataAvail())
+            } catch (t: Throwable) {
+                throw IllegalArgumentException("Failed to copy transaction payload", t)
+            }
             val identity = Binder.clearCallingIdentity()
             try {
                 targetBinder.transact(targetCode, newData, reply, targetFlags)
@@ -302,10 +337,15 @@ class NightServiceEndpoint(
         val callingUid = Binder.getCallingUid()
         val callingPid = Binder.getCallingPid()
         val isManager = service.checkCallerManagerPermission("checkPermission", callingUid, callingPid)
-        val allowed = isManager || service.checkSelfPermission()
+        val paused = service.configManager.isAccessPaused()
+        val allowed = isManager || (!paused && service.checkSelfPermission())
         val entry = service.configManager.find(callingUid)
         val rationale = !allowed && (entry?.isDenied() == true)
-        val caps = if (isManager) NightProtocol.MASK_CAPABILITIES else TransactGuard.effectiveCapabilities(entry)
+        val caps = if (isManager) {
+            NightProtocol.MASK_CAPABILITIES
+        } else {
+            TransactGuard.effectiveCapabilities(entry, paused)
+        }
 
         reply.writeNoException()
         reply.writeInt(if (allowed) 1 else 0)
@@ -344,11 +384,14 @@ class NightServiceEndpoint(
         } catch (_: Throwable) {
         }
 
-        val stdoutFuture = execPool.submit<ByteArray> {
-            readBoundedStream(process.inputStream, NightProtocol.EXEC_FAST_MAX_OUTPUT_BYTES)
+        val stdoutBuffer = BoundedBuffer(NightProtocol.EXEC_FAST_MAX_OUTPUT_BYTES)
+        val stderrBuffer = BoundedBuffer(NightProtocol.EXEC_FAST_MAX_OUTPUT_BYTES)
+
+        val stdoutFuture = execPool.submit {
+            drainStreamIntoBuffer(process.inputStream, stdoutBuffer)
         }
-        val stderrFuture = execPool.submit<ByteArray> {
-            readBoundedStream(process.errorStream, NightProtocol.EXEC_FAST_MAX_OUTPUT_BYTES)
+        val stderrFuture = execPool.submit {
+            drainStreamIntoBuffer(process.errorStream, stderrBuffer)
         }
 
         var timedOut = false
@@ -358,45 +401,70 @@ class NightServiceEndpoint(
             } else {
                 timedOut = true
                 process.destroyForcibly()
+                runCatching { process.inputStream.close() }
+                runCatching { process.errorStream.close() }
                 124
             }
         } catch (e: InterruptedException) {
             process.destroyForcibly()
+            runCatching { process.inputStream.close() }
+            runCatching { process.errorStream.close() }
+            stdoutFuture.cancel(true)
+            stderrFuture.cancel(true)
             Thread.currentThread().interrupt()
             throw IllegalStateException("Interrupted while waiting for process", e)
         }
 
-        val stdoutBytes = try {
-            stdoutFuture.get(2, TimeUnit.SECONDS)
+        // Wait briefly for pipe drain; if a backgrounded child process inherited the pipe FDs,
+        // close the streams to unblock the reader threads and return the bytes captured so far.
+        try {
+            stdoutFuture.get(250, TimeUnit.MILLISECONDS)
         } catch (_: Throwable) {
-            ByteArray(0)
+            runCatching { process.inputStream.close() }
+            stdoutFuture.cancel(true)
         }
-        val stderrBytes = try {
-            stderrFuture.get(2, TimeUnit.SECONDS)
+        try {
+            stderrFuture.get(250, TimeUnit.MILLISECONDS)
         } catch (_: Throwable) {
-            ByteArray(0)
+            runCatching { process.errorStream.close() }
+            stderrFuture.cancel(true)
         }
 
         reply.writeNoException()
         reply.writeInt(exitCode)
         reply.writeInt(if (timedOut) 1 else 0)
-        reply.writeByteArray(stdoutBytes)
-        reply.writeByteArray(stderrBytes)
+        reply.writeByteArray(stdoutBuffer.toByteArray())
+        reply.writeByteArray(stderrBuffer.toByteArray())
     }
 
-    private fun readBoundedStream(input: InputStream, maxBytes: Int): ByteArray {
-        input.use { stream ->
-            val out = ByteArrayOutputStream()
-            val buf = ByteArray(4096)
-            while (true) {
-                val read = stream.read(buf)
-                if (read < 0) break
-                val remaining = maxBytes - out.size()
-                if (remaining > 0) {
-                    out.write(buf, 0, minOf(read, remaining))
+    private class BoundedBuffer(private val maxBytes: Int) {
+        private val out = ByteArrayOutputStream()
+
+        @Synchronized
+        fun append(buf: ByteArray, length: Int) {
+            val remaining = maxBytes - out.size()
+            if (remaining > 0) {
+                out.write(buf, 0, minOf(length, remaining))
+            }
+        }
+
+        @Synchronized
+        fun toByteArray(): ByteArray = out.toByteArray()
+    }
+
+    private fun drainStreamIntoBuffer(input: InputStream, target: BoundedBuffer) {
+        try {
+            input.use { stream ->
+                val buf = ByteArray(4096)
+                while (true) {
+                    val read = stream.read(buf)
+                    if (read < 0) break
+                    if (read > 0) {
+                        target.append(buf, read)
+                    }
                 }
             }
-            return out.toByteArray()
+        } catch (_: Throwable) {
         }
     }
 }

@@ -8,24 +8,43 @@
 
 **Yozuku** は、kerneldroid による **Shizuku** のモダンフォーク **Nightzuku** を、日本語化したものです。「Night（夜）」を日本語の「夜（Yo）」に置き換えて、Yozuku という表示名にしています。アプリが昇格した権限（root / ADB）でシステム API を直接利用するための、堅牢で高性能なインターフェースを提供します。
 
-このプロジェクトは、Android 16/17 をターゲットとした安定性の確保など最新の Android プラットフォームの動向に追従しており、Jetpack Compose による刷新された Material 3 Expressive UI と、ADB ベースの ZIP モジュール実行機能を備えています。
+このプロジェクトは、Android 16/17 をターゲットとした安定性の確保など最新の Android プラットフォームの動向に追従しており、Jetpack Compose による刷新された Material 3 Expressive UI、**2 系統（デュアルワイヤー）**のサーバー／クライアント間プロトコル、ADB ベースの ZIP モジュール実行機能を備えています。
 
 > [!NOTE]
 > このリポジトリ（[taketake5656/Yozuku](https://github.com/taketake5656/Yozuku)）は [kerneldroid/Nightzuku](https://github.com/kerneldroid/Nightzuku) のフォークで、アプリの日本語化を行っています。アプリの表示名は Yozuku ですが、パッケージ ID は Nightzuku と同じ `kerneldroid.nightzuku` のままです。署名が異なるため、kerneldroid 版の Nightzuku から上書きでインストールすることはできません。先にアンインストールしてください。
 
-> [!IMPORTANT]
-> **移行時の対応が必要です:** パッケージ ID の変更（`moe.shizuku.privileged.api` → `kerneldroid.nightzuku`）に伴い、Yozuku をインストールする前に、旧公式 Shizuku Manager アプリを端末から**必ずアンインストール**してください。アンインストールしないと競合が発生します。
-
 アップストリームプロジェクト: <https://github.com/RikkaApps/Shizuku>
+
+> [!NOTE]
+> **Shizuku からはスムーズに移行できます。公式の Shizuku アプリをアンインストールする必要はありません。** Yozuku は旧来の `moe.shizuku.manager.permission.API_V23` 権限を宣言しなくなった（マージ後のマニフェストから明示的に削除している）ため、公式の Shizuku Manager と権限やオーソリティが競合しません。詳しくは [2 系統のアーキテクチャと移行](#2-系統のアーキテクチャと移行) を参照してください。
 
 ## フォークでの追加機能
 
 - Material 3 Expressive コンポーネント、モーション、スイッチ、角丸アイコンを採用した Jetpack Compose 製の管理 UI。
-- このフォークにおける、最新のプレビュー SDK／ビルドツールを使った Android 16/17 ターゲット対応。
-- ZIP モジュールをインストール・管理するための「ADB モジュール」画面。
+- 2 系統のサーバー／クライアント間プロトコル: 従来の Shizuku の経路に加えて、スタブを必要としない Nightzuku 独自の経路。
+- 暗号学的な SHA-256 によるパッケージとマネージャーの証明書の固定（Android 9 以降の `signingCertificateHistory` による鍵のローテーションの履歴にも対応）。サーバー、`UserService` のホスト、ADB でのパッケージの照合のすべてで行います。
+- クライアントからのアクセスをまとめて一時停止するスイッチ（`accessPaused`）、UID ごとの `UserService` の終了、1 回限りの許可のプロセス終了時の後始末、システムの設定で取り消された実行時の権限の同期。
+- 強化した権限の確認ダイアログ（`RequestPermissionActivity`）: オーバーレイの非表示（`setHideOverlayWindows`）、タップの猶予時間、Unicode・双方向テキストを使ったラベルの無害化、UID を共有するパッケージの表示。
+- このフォークにおける、最新のプレビュー SDK／ビルドツールを使った Android 16/17 ターゲット対応（`Android17Compat` と、引数 1 つの `IUserManager.getUsers` への切り替えを含む）。
+- ZIP モジュールをインストール・管理するための「ADB モジュール」画面（読み込みながらのサイズ制限と、分離したシェルでの実行）。
 - モジュール機能: `module.prop`、バナー、有効／無効スイッチ、`action.sh`、ポリシーで制御される `service.sh`、ローカル WebUI、削除、パスチェック、サイズ制限、出力制限、最終実行ログ。
 - モジュールのポリシー設定: セーフモード、フルアクセス、バックグラウンドアクションの制御。
+- オンラインのモジュールカタログ（GitHub Topics から検索）。ダウンロード数の表示と、長期間更新されていないモジュールの検出。
+- サーバーの状態を監視して復旧させる NightDog ウォッチドッグ（重要なプラットフォームのサービスと、任意のサービスを監視）。
 - デバッグ用テストモジュール（`test-modules/adb-test-module.zip`）。
+
+## 2 系統のアーキテクチャと移行
+
+Yozuku は、従来の Shizuku の経路と並行して、スタブを必要としない独自のプロトコルを動かし、クライアントが宣言した経路に振り分けます。
+
+- **独自の経路** — `kerneldroid.nightzuku.INightService`（`NightClient` / `NightProtocol` / `NightServiceEndpoint`）: 単純な `Parcel` のトランザクション、UID ごとの機能のマスク、確認付きの `transactRemote`、1 回で済む高速な `execFast`。サーバー側に `moe.shizuku.api` のスタブクラスは必要ありません。
+- **従来の経路** — 従来の Shizuku の binder です。今も従来の権限を要求するクライアントに渡します。
+- **振り分け** — `ClientRouting` が、パッケージごとにどの経路を渡すかを決めます。`TransactGuard` は、トランザクションを転送する前に宛先の binder を確認します。
+
+これにより、移行が穏やかに進みます。
+
+- 旧来の `moe.shizuku.manager.permission.API_V23` は Yozuku では宣言して**いません**（`tools:node="remove"` で削除しています）。そのため、公式の Shizuku アプリと Yozuku は共存でき、同じ権限やオーソリティを取り合いません。
+- Shizuku API をすでに組み込んでいるアプリは、従来の経路でそのまま動きます。独自の経路への移行は、自分のペースで進められます。
 
 ## ドキュメント
 
@@ -37,6 +56,7 @@
 - [Wear OS ペア設定ガイド](docs/wearos-pairing.md)
 - [Android TV サポート](docs/android-tv-support.md)
 - [NightDog ウォッチドッグ](docs/nightdog.md)
+- [NightDog によるバックグラウンドの処理とモジュールのアップデート](docs/nightdog-updates.md)
 - [GitHub カタログ](docs/github-catalog.md)
 
 ## 背景
@@ -153,4 +173,5 @@ Yozuku はプロキシとして動作し、アプリからのリクエストを�
 
 ## クレジット
 
-[**Razgame**](https://github.com/RazGame/Shizuku) — [アプリ一覧の修正](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842)
+- [**Razgame**](https://github.com/RazGame/Shizuku) — [アプリ一覧の修正](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842)
+- [**Porter**（d4rken-org）](https://github.com/d4rken-org/porter) — アーキテクチャとセキュリティ強化のアイデア（パッケージの署名による身元の確認、root／ADB 間での設定ファイルの所有権の受け渡し、権限ダイアログのなりすまし対策、ワイヤレス ADB／mDNS のライフサイクルの境界条件の分析）。コードは流用せず、Nightzuku の 2 系統のアーキテクチャに合わせて独自に作り直しています。

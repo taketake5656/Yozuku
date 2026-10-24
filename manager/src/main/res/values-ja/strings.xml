@@ -1,6 +1,4 @@
 <resources>
-    <!-- To translators: you can leave your here -->
-    <string name="translation_contributors" />
 
     <!-- Home - Status -->
     <string name="home_status_service_is_running">%1$s は実行中です</string>
@@ -21,9 +19,7 @@
 
     <!-- Home - Adb -->
     <string name="home_adb_title"><![CDATA[パソコンに接続して起動]]></string>
-    <string name="home_adb_description"><![CDATA[root 化されていないデバイスでは、adb を使用して Yozuku を起動する必要があります（パソコンへの接続が必要）。この操作はデバイスを再起動するたびに行う必要があります。<b><a href=\"%1$s\">ヘルプをお読みください</a></b>。]]>
-
-注意: Yozuku は Shizuku の後継アプリです。競合を防ぐため、旧公式 Shizuku アプリを先にアンインストールしてください。</string>
+    <string name="home_adb_description"><![CDATA[root 化されていないデバイスでは、adb を使用して Yozuku を起動する必要があります（パソコンへの接続が必要）。この操作はデバイスを再起動するたびに行う必要があります。<b><a href=\"%1$s\">ヘルプをお読みください</a></b>。]]></string>
     <string name="home_adb_button_view_help">ヘルプを読む</string>
     <string name="home_adb_button_view_command">コマンドを表示</string>
     <string name="home_adb_dialog_view_command_message"><![CDATA[<font face="monospace">%1$s</font><br><br>※ その他にも注意事項があります。先にヘルプを読んだことを確認してください。]]></string>
@@ -32,9 +28,7 @@
 
     <!-- Home - Wireless Adb -->
     <string name="home_wireless_adb_title"><![CDATA[ワイヤレスデバッグで起動]]></string>
-    <string name="home_wireless_adb_description"><![CDATA[Android 11 以降では、ワイヤレスデバッグを有効にすることで、パソコンに接続せずにデバイス上から直接 Yozuku を起動できます。<p>まずステップガイドをご確認ください。]]>
-
-注意: Yozuku は Shizuku の後継アプリです。競合を防ぐため、旧公式 Shizuku アプリを先にアンインストールしてください。</string>
+    <string name="home_wireless_adb_description"><![CDATA[Android 11 以降では、ワイヤレスデバッグを有効にすることで、パソコンに接続せずにデバイス上から直接 Yozuku を起動できます。<p>まずステップガイドをご確認ください。]]></string>
     <string name="home_wireless_adb_description_pre_11"><![CDATA[Android 11 より前のバージョンでは、ワイヤレスデバッグを有効にするためにパソコンへの接続が必要です。]]></string>
     <string name="home_wireless_adb_view_guide_button">ステップガイド</string>
     <string name="home_local_network_title">ローカルネットワークへのアクセス</string>
@@ -78,9 +72,7 @@
 
     <!-- Home - Root -->
     <string name="home_root_title"><![CDATA[起動（root 化済みデバイス向け）]]></string>
-    <string name="home_root_description"><![CDATA[また、Yozuku は起動時に自動で開始することもできます。自動で開始されない場合は、システムやサードパーティ製ツールが Yozuku を制限していないか確認してください。<br>%s を参照してください。]]>
-
-注意: Yozuku は Shizuku の後継アプリです。競合を防ぐため、旧公式 Shizuku アプリを先にアンインストールしてください。</string>
+    <string name="home_root_description"><![CDATA[また、Yozuku は起動時に自動で開始することもできます。自動で開始されない場合は、システムやサードパーティ製ツールが Yozuku を制限していないか確認してください。<br>%s を参照してください。]]></string>
     <string name="home_root_description_sui"><![CDATA[Magisk をお使いの場合は、%1$s を試すことができます。root ユーザー向けには、最終的に Yozuku を置き換えるものです。なお、既存のアプリが %2$s を使用するには多少の変更が必要です。]]></string>
     <string name="home_root_button_start">起動</string>
     <string name="home_root_button_restart">再起動</string>
@@ -170,15 +162,27 @@
     <string name="modules_permission_service">サービスの実行</string>
     <string name="modules_permission_service_summary">バックグラウンドアクションも有効な場合に service.sh を許可します。</string>
     <string name="modules_permission_web_bridge">WebUI シェルブリッジ</string>
-    <string name="modules_permission_web_bridge_summary">ローカルの WebUI に対してのみ、かつ WebView のインターネットアクセスがオフの場合にのみ window.Shizuku を公開します。</string>
+    <string name="modules_permission_web_bridge_summary">ローカルの WebUI に対してのみ、かつ WebView のインターネットアクセスがオフの場合にのみ window.Nightzuku を公開します。</string>
     <string name="modules_permission_web_network">WebView のインターネットアクセス</string>
     <string name="modules_permission_web_network_summary">HTTPS のページ遷移とアセットの読み込みを許可します。その WebView ではシェルブリッジが公開されなくなります。</string>
     <string name="modules_permission_web_download">WebUI の download()</string>
     <string name="modules_permission_web_download_summary">WebUI フォルダへの HTTPS ファイルダウンロードを許可します（index.html を除く）。</string>
     <string name="modules_background_actions">バックグラウンドアクションを許可</string>
-    <string name="modules_background_actions_summary">フルアクセスモードで、インストール済みモジュールがバックグラウンドで ADB 処理を要求することを許可します</string>
+    <string name="modules_background_actions_summary">インストール済みモジュールが、バックグラウンドで service.sh を実行することを許可します</string>
     <string name="modules_background_allowed">バックグラウンド許可</string>
     <string name="modules_background_blocked">バックグラウンド禁止</string>
+    <string name="modules_background_check_title">バックグラウンドでのモジュールの確認（NightDog）</string>
+    <string name="modules_background_check_summary">モジュールの整合性、service.sh の状態、アップデートをバックグラウンドで確認します</string>
+    <string name="modules_background_check_short">モジュールを確認</string>
+    <string name="modules_background_check_run_now">モジュールとサーバーを今すぐ確認</string>
+    <string name="modules_background_check_running">モジュールとサーバーを確認しています…</string>
+    <string name="modules_background_check_never">タップすると、モジュールの状態、バックグラウンドのサービス、アップデートを確認します</string>
+    <string name="modules_background_check_report_summary">正常: %1$d/%2$d • アップデート: %3$d • 問題: %4$d</string>
+    <string name="modules_background_check_toast">確認しました: 正常 %1$d/%2$d、アップデート %3$d 件</string>
+    <string name="modules_health_ok">正常</string>
+    <string name="modules_health_issue">問題あり</string>
+    <string name="modules_update_available_chip">アップデート: v%s</string>
+    <string name="modules_update_success">%1$s をアップデートしました（%2$s）</string>
     <string name="modules_install_zip">ZIP をインストール</string>
     <string name="modules_empty_title">モジュールがインストールされていません</string>
     <string name="modules_empty_summary">ADB モジュールは、module.prop と、任意のバナー、WebUI、action.sh、service.sh を含む KernelSU/Magisk 形式の ZIP を使用します。</string>
@@ -215,6 +219,7 @@
     <string name="modules_recommand_webui_summary">WebUI からシェルを実行する前に確認ダイアログを表示します。</string>
     <string name="modules_recommand_action">アクションの ReCommand</string>
     <string name="modules_recommand_action_summary">action.sh を実行する前に確認ダイアログを表示します。</string>
+    <string name="modules_update_action">アップデート</string>
 
     <!-- About -->
     <string name="action_about">このアプリについて</string>
@@ -246,6 +251,7 @@
     <string name="permission_label">Yozuku へのアクセス</string>
     <string name="permission_description">アプリに Yozuku の使用を許可します。</string>
     <string name="permission_warning_template"><![CDATA[<b>%1$s</b> に %2$s を許可しますか？]]></string>
+    <string name="grant_dialog_button_allow_onetime">今回のみ</string>
     <string name="grant_dialog_button_allow_always">常に許可</string>
     <string name="grant_dialog_button_deny">"許可しない"</string>
 
@@ -270,14 +276,18 @@
     <string name="lab_features_summary">実験的な機能</string>
     <string name="shizuku_connectors_title">Yozuku コネクタ</string>
     <string name="shizuku_connectors_summary">プラグインによる Yozuku の起動を許可します</string>
+    <string name="nightdog_section_title">NightDog とモジュールの監視</string>
     <string name="nightdog_title">NightDog ウォッチドッグ</string>
     <string name="nightdog_summary">サーバーの状態を監視し、応答停止やシステムサービスの停止から復旧します</string>
     <string name="nightdog_description">NightDog は、定期的なハートビートでサーバーのメインスレッドを監視し、重要なシステムサービス（package、activity、user、appops）を Binder の linkToDeath で追跡します。サーバーが応答しなくなったり、重要なサービスとの接続が失われたりすると、NightDog が停止したプロセスを終了させ、スターターデーモンが自動で再起動できるようにします。</string>
+    <string name="nightdog_status_active_summary">NightDog 動作中（サービス: %1$d、再接続: %2$d）</string>
+    <string name="nightdog_status_inactive_summary">NightDog 停止中</string>
     <string name="unsafe_warning_title">警告</string>
     <string name="unsafe_warning_message">この機能を有効にするのは安全ではありません。本当によろしいですか？</string>
 
     <!-- Update Settings -->
-    <string name="update_settings_title">アップデート設定</string>
+    <string name="update_settings_title">アップデートと確認の設定</string>
+    <string name="update_settings_entry_summary">バックグラウンドでのモジュールの確認、更新頻度、カタログ、GitHub トークンを設定します</string>
     <string name="update_settings_catalog">モジュールカタログ</string>
     <string name="update_settings_catalog_enabled">カタログを有効にする</string>
     <string name="update_settings_catalog_enabled_summary">GitHub Topics から見つかったモジュールを表示します</string>
@@ -328,9 +338,8 @@
     <string name="modules_catalog_view_github">GitHub で見る</string>
     <string name="modules_catalog_skip_token">スキップ</string>
     <string name="modules_catalog_open">カタログを開く</string>
+
     <string name="modules_catalog_installed">インストール済み</string>
-    <string name="modules_catalog_update">アップデート</string>
-    <string name="modules_catalog_back">戻る</string>
     <string name="modules_catalog_danger_title">安全でない可能性のあるモジュール</string>
     <string name="modules_catalog_danger_message">このモジュールには、問題を引き起こす可能性のある異常に大きなコンテンツが含まれています:</string>
     <string name="modules_catalog_danger_confirm">それでも続行しますか？</string>
@@ -351,6 +360,30 @@
     <string name="wear_catalog_sort_official">公式</string>
     <string name="wear_catalog_sort_by">並べ替え</string>
     <string name="wear_catalog_filter">フィルター</string>
+    <string name="update_settings_frequency_on_start">サーバーの起動時</string>
+    <string name="update_settings_frequency_6h">6 時間ごと</string>
+    <string name="update_settings_auto_update">モジュールを自動でアップデート</string>
+    <string name="update_settings_auto_update_summary">NightDog を使って、モジュールのアップデートをバックグラウンドで自動インストールします</string>
+    <string name="update_settings_wifi_only">Wi-Fi / 従量制でないネットワークのみ</string>
+    <string name="update_settings_wifi_only_summary">バックグラウンドでのアップデートの確認と自動アップデートは、従量制でないネットワークでのみ行います</string>
+    <string name="update_settings_notifications">アップデートの通知</string>
+    <string name="update_settings_notifications_summary">モジュールのアップデートが見つかったときや、バックグラウンドでインストールされたときに通知します</string>
+    <string name="update_settings_notifications_channel">モジュールのアップデート</string>
+    <string name="modules_updates_available_notification_title">モジュールのアップデートがあります（%d 件）</string>
+    <string name="modules_updates_available_notification_body">タップすると変更内容を確認してアップデートをインストールできます</string>
+    <string name="modules_auto_updated_notification_title">モジュールを自動でアップデートしました（%d 件）</string>
+    <string name="modules_update_all_button">すべてアップデート（%d 件）</string>
+    <string name="modules_update_all_short">すべてアップデート</string>
+    <string name="modules_update_all_progress">アップデート中 %1$d/%2$d</string>
+    <string name="modules_update_all_result">%2$d 件中 %1$d 件のモジュールをアップデートしました</string>
+    <string name="modules_update_version_transition">バージョン: %1$s → %2$s</string>
+    <string name="modules_update_changelog_title">変更履歴</string>
+    <string name="modules_update_changelog_empty">モジュールの作者がリリースノートを書いていません。</string>
+    <string name="modules_update_mode_default">既定</string>
+    <string name="modules_update_now">今すぐアップデート</string>
+    <string name="modules_update_pin">バージョンを固定</string>
+    <string name="modules_update_unpin">バージョンの固定を解除</string>
+    <string name="modules_update_pinned_chip">バージョン固定中</string>
 
     <!-- Overrides for rikka core library strings (library lacks Japanese) -->
     <string name="follow_system">システムに従う</string>

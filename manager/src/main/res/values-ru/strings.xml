@@ -18,9 +18,7 @@
 
     <!-- Home - Adb -->
     <string name="home_adb_title"><![CDATA[Начните с подключения к компьютеру]]></string>
-    <string name="home_adb_description"><![CDATA[Для устройств без root необходимо использовать adb для запуска Yozuku (требуется подключение к компьютеру). Этот процесс нужно повторять после каждого перезапуска устройства. Пожалуйста, <b><a href=\"%1$s\">прочитайте справку</a></b>.]]>
-
-Примечание: Yozuku — это современная замена Shizuku. Пожалуйста, удалите старое официальное приложение Shizuku, чтобы избежать конфликтов.</string>
+    <string name="home_adb_description"><![CDATA[Для устройств без root необходимо использовать adb для запуска Yozuku (требуется подключение к компьютеру). Этот процесс нужно повторять после каждого перезапуска устройства. Пожалуйста, <b><a href=\"%1$s\">прочитайте справку</a></b>.]]></string>
     <string name="home_adb_button_view_help">Справка</string>
     <string name="home_adb_button_view_command">Посмотреть команду</string>
     <string name="home_adb_dialog_view_command_message"><![CDATA[<font face=\"monospace\">%1$s</font><br><br>* Есть дополнительные условия, убедитесь, что вы прочитали справку.]]></string>
@@ -29,9 +27,7 @@
 
     <!-- Home - Wireless Adb -->
     <string name="home_wireless_adb_title"><![CDATA[Запуск через беспроводную отладку]]></string>
-    <string name="home_wireless_adb_description"><![CDATA[На Android 11 и выше можно включить беспроводную отладку и запустить Yozuku прямо с устройства, без подключения к компьютеру.<p>Сначала ознакомьтесь с пошаговым руководством.]]>
-
-Примечание: Yozuku — это современная замена Shizuku. Пожалуйста, удалите старое официальное приложение Shizuku, чтобы избежать конфликтов.</string>
+    <string name="home_wireless_adb_description"><![CDATA[На Android 11 и выше можно включить беспроводную отладку и запустить Yozuku прямо с устройства, без подключения к компьютеру.<p>Сначала ознакомьтесь с пошаговым руководством.]]></string>
     <string name="home_wireless_adb_description_pre_11"><![CDATA[До Android 11 подключение к компьютеру необходимо для включения беспроводной отладки.]]></string>
     <string name="home_wireless_adb_view_guide_button">Пошаговое руководство</string>
     <string name="home_local_network_title">Доступ к локальной сети</string>
@@ -43,7 +39,7 @@
 
     <!-- Adb -->
     <string name="dialog_adb_discovery">Поиск службы беспроводной отладки</string>
-    <string name="dialog_adb_discovery_message">Включите \"Беспроводную отладку\" в \"Параметрах разработчика\". \"Беспроводная отладка\" автоматически отключается при смене сети.\n\nНе отключайте \"Параметры разработчика\" и \"Отладку по USB\", иначе Yozuku будет остановлен.</string>
+    <string name="dialog_adb_discovery_message">Включите \"Беспроводную отладку\" в \"Параметрах разработчика\". \"Беспроводная отладкa\" автоматически отключается при смене сети.\n\nНе отключайте \"Параметры разработчика\" и \"Отладку по USB\", иначе Yozuku будет остановлен.</string>
     <string name="dialog_adb_discovery_message_toggle_wireless_debugging">Если поиск продолжается, попробуйте отключить и снова включить \"Беспроводную отладку\".</string>
     <string name="dialog_adb_port">Порт</string>
     <string name="dialog_adb_invalid_port">Порт — целое число от 1 до 65535.</string>
@@ -71,13 +67,11 @@
     <string name="adb_pairing_tutorial_content_left_is_clickable">Обратите внимание: левая часть опции \"Беспроводная отладка\" кликабельна — она откроет новую страницу. Просто включить переключатель справа недостаточно.</string>
     <string name="adb_pairing_tutorial_content_finish">Вернитесь в Yozuku и запустите Yozuku.</string>
     <string name="adb_pairing_tutorial_content_network">Yozuku нужен доступ к локальной сети. Это управляется разрешением сети.</string>
-    <string name="adb_pairing_tutorial_content_network_limation_not_foreground">Некоторые системы (например MIUI) запрещают приложениям доступ к сети, когда они не на переднем плане, даже при использовании foreground service. Отключите оптимацию батареи для Yozuku на таких системах.</string>
+    <string name="adb_pairing_tutorial_content_network_limation_not_foreground">Некоторые системы (например MIUI) запрещают приложениям доступ к сети, когда они не на переднем плане, даже при использовании foreground service. Отключите оптимизацию батареи для Yozuku на таких системах.</string>
 
     <!-- Home - Root -->
     <string name="home_root_title"><![CDATA[Запуск (для устройств с root)]]></string>
-    <string name="home_root_description"><![CDATA[Кроме того, Yozuku может автоматически запускаться при загрузке. Если этого не происходит, проверьте, не ограничивает ли ваша система или сторонние инструменты Yozuku.<br>Можете обратиться к %s.]]>
-
-Примечание: Yozuku — это современная замена Shizuku. Пожалуйста, удалите старое официальное приложение Shizuku, чтобы избежать конфликтов.</string>
+    <string name="home_root_description"><![CDATA[Кроме того, Yozuku может автоматически запускаться при загрузке. Если этого не происходит, проверьте, не ограничивает ли ваша система или сторонние инструменты Yozuku.<br>Можете обратиться к %s.]]></string>
     <string name="home_root_description_sui"><![CDATA[Если вы используете Magisk, попробуйте %1$s. Для root-пользователей это в конечном счёте заменит Yozuku. Приложениям потребуется небольшая доработка для использования %2$s.]]></string>
     <string name="home_root_button_start">Запуск</string>
     <string name="home_root_button_restart">Перезапуск</string>
@@ -170,15 +164,27 @@
     <string name="modules_permission_service">Запуск сервиса</string>
     <string name="modules_permission_service_summary">Разрешить service.sh при включённых фоновых действиях.</string>
     <string name="modules_permission_web_bridge">WebUI shell-мост</string>
-    <string name="modules_permission_web_bridge_summary">Предоставить window.Shizuku только для локального WebUI и только при отключённом интернете в WebView.</string>
+    <string name="modules_permission_web_bridge_summary">Предоставить window.Nightzuku только для локального WebUI и только при отключённом интернете в WebView.</string>
     <string name="modules_permission_web_network">Интернет в WebView</string>
-    <string name="modules_permission_web_network_summary">Разрешить HTTPS-навигацию/ресурсы. Отключает暴露暴露暴露 shell-моста для этого WebView.</string>
+    <string name="modules_permission_web_network_summary">Разрешить HTTPS-навигацию/ресурсы. Отключает доступ к shell-мосту для этого WebView.</string>
     <string name="modules_permission_web_download">Загрузка WebUI()</string>
     <string name="modules_permission_web_download_summary">Разрешить HTTPS-загрузку файлов в папку WebUI, кроме index.html.</string>
     <string name="modules_background_actions">Разрешить фоновые действия</string>
-    <string name="modules_background_actions_summary">Позволить установленным модулям запрашивать фоновую ADB-работу в режиме полного доступа</string>
+    <string name="modules_background_actions_summary">Позволить установленным модулям запускать фоновые сервисы (service.sh)</string>
     <string name="modules_background_allowed">Фон разрешён</string>
     <string name="modules_background_blocked">Фон заблокирован</string>
+    <string name="modules_background_check_title">Фоновая проверка модулей (NightDog)</string>
+    <string name="modules_background_check_summary">Проверка целостности модулей, статуса service.sh и обновлений в фоне</string>
+    <string name="modules_background_check_short">Проверить</string>
+    <string name="modules_background_check_run_now">Проверить модули и сервер сейчас</string>
+    <string name="modules_background_check_running">Проверка модулей и сервера…</string>
+    <string name="modules_background_check_never">Нажмите для проверки целостности модулей, фоновых сервисов и обновлений</string>
+    <string name="modules_background_check_report_summary">Исправно: %1$d/%2$d • Обновлений: %3$d • Проблем: %4$d</string>
+    <string name="modules_background_check_toast">Проверено: исправно %1$d из %2$d, обновлений: %3$d</string>
+    <string name="modules_health_ok">Исправен</string>
+    <string name="modules_health_issue">Ошибка модуля</string>
+    <string name="modules_update_available_chip">Обновление: v%s</string>
+    <string name="modules_update_success">Обновлён %1$s (%2$s)</string>
     <string name="modules_install_zip">Установить ZIP</string>
     <string name="modules_empty_title">Модули не установлены</string>
     <string name="modules_empty_summary">ADB-модули используют ZIP в стиле KernelSU/Magisk с module.prop, опциональным баннером, WebUI, action.sh и service.sh.</string>
@@ -215,6 +221,7 @@
     <string name="modules_recommand_webui_summary">Показывать диалог подтверждения перед shell-выполнением в WebUI.</string>
     <string name="modules_recommand_action">ReCommand для действий</string>
     <string name="modules_recommand_action_summary">Показывать диалог подтверждения перед action.sh.</string>
+    <string name="modules_update_action">Обновить</string>
 
     <!-- About -->
     <string name="action_about">О приложении</string>
@@ -246,12 +253,13 @@
     <string name="permission_label">Доступ к Yozuku</string>
     <string name="permission_description">Разрешить приложению использовать Yozuku.</string>
     <string name="permission_warning_template"><![CDATA[Разрешить <b>%1$s</b> %2$s?]]></string>
+    <string name="grant_dialog_button_allow_onetime">Только в этот раз</string>
     <string name="grant_dialog_button_allow_always">Разрешить всегда</string>
     <string name="grant_dialog_button_deny">«Отклонить»</string>
 
     <!-- Starter -->
     <string name="starter">Загрузчик</string>
-    <string name="start_with_root_failed">Не удалось запустить службу: root-доступ не получен или устройство не.rootовано.</string>
+    <string name="start_with_root_failed">Не удалось запустить службу: root-доступ не получен или на устройстве нет root-прав.</string>
 
     <!-- Misc -->
     <string name="dialog_cannot_open_browser_title">Не удалось открыть браузер</string>
@@ -262,7 +270,7 @@
     <string name="dialog_legacy_not_support_title">%1$s не поддерживает современный Yozuku</string>
     <string name="dialog_legacy_not_support_message"><![CDATA[Устаревший Yozuku не поддерживается с марта 2019 года. Также он не работает на новых версиях Android.<p>Попросите разработчика <b>%1$s</b> обновить приложение.]]></string>
     <string name="dialog_requesting_legacy_title">%1$s запрашивает устаревший Yozuku</string>
-    <string name="dialog_requesting_legacy_message"><![CDATA[<b>%1$s</b> поддерживает современный Yozuku, но запрашует устаревший. Возможно, Yozuku не запущен — проверьте в приложении.<p>Устаревший Yozuku не поддерживается с марта 2019 года.]]></string>
+    <string name="dialog_requesting_legacy_message"><![CDATA[<b>%1$s</b> поддерживает современный Yozuku, но запрашивает устаревший. Возможно, Yozuku не запущен — проверьте в приложении.<p>Устаревший Yozuku не поддерживается с марта 2019 года.]]></string>
     <string name="dialog_requesting_legacy_button_open_shizuku">Открыть Yozuku</string>
 
     <!-- Lab Features -->
@@ -270,14 +278,18 @@
     <string name="lab_features_summary">Экспериментальные возможности</string>
     <string name="shizuku_connectors_title">Подключатели Yozuku</string>
     <string name="shizuku_connectors_summary">Разрешить плагинам активировать Yozuku</string>
+    <string name="nightdog_section_title">NightDog и фоновая проверка модулей</string>
     <string name="nightdog_title">Сторожевой таймер NightDog</string>
     <string name="nightdog_summary">Мониторинг здоровья сервера и автовосстановление при зависаниях</string>
     <string name="nightdog_description">NightDog отслеживает отзывчивость главного потока сервера через периодические сигналы (heartbeat) и состояние критических системных служб (package, activity, user, appops) через Binder linkToDeath. При зависании сервера или потере служб NightDog перезапускает процесс через загрузчик.</string>
+    <string name="nightdog_status_active_summary">NightDog активен (служб: %1$d, перепривязок: %2$d)</string>
+    <string name="nightdog_status_inactive_summary">NightDog неактивен</string>
     <string name="unsafe_warning_title">Внимание</string>
     <string name="unsafe_warning_message">Включение этой функции НЕБЕЗОПАСНО. Вы уверены?</string>
 
     <!-- Update Settings -->
-    <string name="update_settings_title">Настройки обновлений</string>
+    <string name="update_settings_title">Обновления и фоновая проверка</string>
+    <string name="update_settings_entry_summary">Фоновая проверка модулей, частота обновлений, каталог и токен GitHub</string>
     <string name="update_settings_catalog">Каталог модулей</string>
     <string name="update_settings_catalog_enabled">Включить каталог</string>
     <string name="update_settings_catalog_enabled_summary">Показывать обнаруженные модули из GitHub Topics</string>
@@ -328,9 +340,8 @@
     <string name="modules_catalog_view_github">Открыть на GitHub</string>
     <string name="modules_catalog_skip_token">Пропустить</string>
     <string name="modules_catalog_open">Открыть каталог</string>
+
     <string name="modules_catalog_installed">Установлен</string>
-    <string name="modules_catalog_update">Обновить</string>
-    <string name="modules_catalog_back">Назад</string>
     <string name="modules_catalog_danger_title">Потенциально небезопасный модуль</string>
     <string name="modules_catalog_danger_message">Этот модуль содержит необычно большой объём данных, что может вызвать проблемы:</string>
     <string name="modules_catalog_danger_confirm">Всё равно продолжить?</string>
@@ -341,14 +352,38 @@
     <string name="dialog_adb_discovered_port">Найден порт: %1$d</string>
 
     <!-- TV Status -->
-    <string name="tv_status_active">АКТИВНО</string>
-    <string name="tv_status_disabled">ОТКЛЮЧЕНО</string>
+    <string name="tv_status_active">АКТИВЕН</string>
+    <string name="tv_status_disabled">ОТКЛЮЧЁН</string>
     <string name="tv_status_trusted">ДОВЕРЕННЫЙ</string>
 
     <!-- Wear Catalog -->
     <string name="wear_catalog_sort_newest">Новые</string>
-    <string name="wear_catalog_sort_stars">По звёздам</string>
+    <string name="wear_catalog_sort_stars">Звёзды</string>
     <string name="wear_catalog_sort_official">Официальные</string>
     <string name="wear_catalog_sort_by">Сортировка</string>
     <string name="wear_catalog_filter">Фильтр</string>
+    <string name="update_settings_frequency_on_start">При запуске сервера</string>
+    <string name="update_settings_frequency_6h">Каждые 6 часов</string>
+    <string name="update_settings_auto_update">Автообновление модулей</string>
+    <string name="update_settings_auto_update_summary">Автоматически устанавливать обновления модулей в фоне через NightDog</string>
+    <string name="update_settings_wifi_only">Только по Wi-Fi (безлимитная сеть)</string>
+    <string name="update_settings_wifi_only_summary">Проверять и скачивать обновления в фоне только в безлимитных сетях</string>
+    <string name="update_settings_notifications">Уведомления об обновлениях</string>
+    <string name="update_settings_notifications_summary">Уведомлять о найденных или установленных в фоне обновлениях модулей</string>
+    <string name="update_settings_notifications_channel">Обновления модулей</string>
+    <string name="modules_updates_available_notification_title">Доступны обновления модулей (%d)</string>
+    <string name="modules_updates_available_notification_body">Нажмите для просмотра изменений и установки обновлений</string>
+    <string name="modules_auto_updated_notification_title">Модули обновлены автоматически (%d)</string>
+    <string name="modules_update_all_button">Обновить все (%d)</string>
+    <string name="modules_update_all_short">Обновить все</string>
+    <string name="modules_update_all_progress">Обновление %1$d из %2$d</string>
+    <string name="modules_update_all_result">Обновлено модулей: %1$d из %2$d</string>
+    <string name="modules_update_version_transition">Версия: %1$s → %2$s</string>
+    <string name="modules_update_changelog_title">Список изменений</string>
+    <string name="modules_update_changelog_empty">Автор модуля не указал описание изменений.</string>
+    <string name="modules_update_mode_default">По умолчанию</string>
+    <string name="modules_update_now">Обновить сейчас</string>
+    <string name="modules_update_pin">Заморозить версию</string>
+    <string name="modules_update_unpin">Разморозить версию</string>
+    <string name="modules_update_pinned_chip">Версия заморожена</string>
 </resources>

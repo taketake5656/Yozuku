@@ -3,18 +3,20 @@ package moe.shizuku.manager.module
 import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
 import java.io.BufferedInputStream
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.ConcurrentHashMap
 
 object AdbModuleManager {
 
@@ -22,6 +24,7 @@ object AdbModuleManager {
     private const val DISABLE_FILE = "disable"
     private const val MAX_ENTRY_COUNT = 2048
     private const val MAX_EXTRACTED_BYTES = 200L * 1024L * 1024L
+    private const val MAX_PROP_BYTES = 64L * 1024L
     private const val MAX_SCRIPT_SECONDS = 120L
     private const val MAX_OUTPUT_CHARS = 64 * 1024
     private const val MAX_SCRIPT_BYTES = 256 * 1024
@@ -31,7 +34,8 @@ object AdbModuleManager {
 
     fun cleanupStagingDirs(context: Context) {
         modulesRoot(context).listFiles { file ->
-            file.isDirectory && file.name.startsWith(".") && file.name.endsWith(".installing")
+            file.isDirectory && file.name.startsWith(".") &&
+                (file.name.endsWith(".installing") || file.name.endsWith(".backup"))
         }?.forEach { it.deleteRecursively() }
     }
 
@@ -61,13 +65,87 @@ object AdbModuleManager {
             .orEmpty()
     }
 
+    suspend fun inspectModuleHealth(module: AdbModule): ModuleHealthStatus = withContext(Dispatchers.IO) {
+        val issues = mutableListOf<String>()
+        val dir = module.directory
+
+        if (!dir.isDirectory) {
+            issues += "Каталог модуля отсутствует"
+        } else {
+            val propFile = dir.resolve("module.prop")
+            if (!propFile.isFile || !propFile.canRead()) {
+                issues += "Повреждён или недоступен module.prop"
+            }
+            markScriptsExecutable(dir)
+        }
+
+        module.actionScript?.let { script ->
+            if (!script.isFile) {
+                issues += "Отсутствует action.sh"
+            } else if (script.length() == 0L) {
+                issues += "Пустой скрипт action.sh"
+            } else if (script.length() > MAX_SCRIPT_BYTES) {
+                issues += "Слишком большой action.sh (${script.length() / 1024} КБ)"
+            }
+        }
+
+        module.serviceScript?.let { script ->
+            if (!script.isFile) {
+                issues += "Отсутствует service.sh"
+            } else if (script.length() == 0L) {
+                issues += "Пустой скрипт service.sh"
+            } else if (script.length() > MAX_SCRIPT_BYTES) {
+                issues += "Слишком большой service.sh (${script.length() / 1024} КБ)"
+            }
+        }
+
+        module.webRoot?.let { webDir ->
+            val indexHtml = webDir.resolve("index.html").takeIf { it.isFile }
+                ?: webDir.resolve("index.htm").takeIf { it.isFile }
+            if (indexHtml == null || indexHtml.length() == 0L) {
+                issues += "Повреждён WebUI (отсутствует index.html)"
+            }
+        }
+
+        val lastActionExit = module.lastActionExitCode
+        val lastServiceExit = module.lastServiceExitCode
+
+        if (lastServiceExit != null && lastServiceExit != 0) {
+            issues += "service.sh завершился с кодом $lastServiceExit"
+        }
+
+        ModuleHealthStatus(
+            moduleId = module.id,
+            healthy = issues.isEmpty(),
+            lastActionExitCode = lastActionExit,
+            lastServiceExitCode = lastServiceExit,
+            issues = issues
+        )
+    }
+
+    internal fun copyStreamBounded(input: InputStream, output: OutputStream, maxBytes: Long): Long {
+        val buf = ByteArray(DEFAULT_BUFFER_SIZE)
+        var copied = 0L
+        while (true) {
+            val read = input.read(buf)
+            if (read < 0) break
+            if (read == 0) continue
+            copied += read.toLong()
+            require(copied <= maxBytes) { "Module ZIP exceeds maximum allowed size ($maxBytes bytes)." }
+            output.write(buf, 0, read)
+        }
+        return copied
+    }
+
     suspend fun install(context: Context, uri: Uri): AdbModule = withContext(Dispatchers.IO) {
         cleanupStagingDirs(context)
         val temp = File.createTempFile("module-", ".zip", context.cacheDir)
         try {
             context.contentResolver.openInputStream(uri).use { input ->
                 requireNotNull(input) { "Unable to open module ZIP." }
-                temp.outputStream().use { output -> input.copyTo(output) }
+                temp.outputStream().use { output ->
+                    copyStreamBounded(input, output, MAX_EXTRACTED_BYTES)
+                }
             }
 
             ZipFile(temp).use { zip ->
@@ -86,7 +164,11 @@ object AdbModuleManager {
                     propPath.removeSuffix("module.prop")
                 }
 
-                val props = zip.getInputStream(propEntry).use { parseModuleProp(it.bufferedReader().readText()) }
+                val propBytes = java.io.ByteArrayOutputStream()
+                zip.getInputStream(propEntry).use { propStream ->
+                    copyStreamBounded(propStream, propBytes, MAX_PROP_BYTES)
+                }
+                val props = parseModuleProp(propBytes.toString(Charsets.UTF_8.name()))
                 val id = props["id"]?.trim().orEmpty()
                 require(idRegex.matches(id)) { "Invalid module id: $id" }
 
@@ -95,7 +177,9 @@ object AdbModuleManager {
 
                     val target = File(modulesDir, id)
                     val staging = File(modulesDir, ".$id.installing")
+                    val backup = File(modulesDir, ".$id.backup")
                     staging.deleteRecursively()
+                    backup.deleteRecursively()
                     staging.mkdirs()
 
                     var entryCount = 0
@@ -120,26 +204,52 @@ object AdbModuleManager {
                             outFile.mkdirs()
                         } else {
                             outFile.parentFile?.mkdirs()
+                            val remainingBudget = (MAX_EXTRACTED_BYTES - extractedBytes).coerceAtLeast(0L)
                             BufferedInputStream(zip.getInputStream(entry)).use { input ->
-                                outFile.outputStream().use { output -> input.copyTo(output) }
+                                outFile.outputStream().use { output ->
+                                    extractedBytes += copyStreamBounded(input, output, remainingBudget)
+                                }
                             }
-                            extractedBytes += outFile.length()
-                            require(extractedBytes <= MAX_EXTRACTED_BYTES) { "Module ZIP is too large." }
                         }
                     }
 
-                    // Preserve existing .source.prop across updates if not included in new ZIP
+                    // Preserve existing .source.prop and disabled state across updates
                     val existingSourceProp = target.resolve(".source.prop")
                     val stagingSourceProp = staging.resolve(".source.prop")
                     if (existingSourceProp.isFile && !stagingSourceProp.exists()) {
                         runCatching { existingSourceProp.copyTo(stagingSourceProp, overwrite = false) }
                     }
+                    val existingDisable = target.resolve(DISABLE_FILE)
+                    val stagingDisable = staging.resolve(DISABLE_FILE)
+                    if (existingDisable.exists() && !stagingDisable.exists()) {
+                        runCatching { existingDisable.copyTo(stagingDisable, overwrite = false) }
+                    }
 
                     markScriptsExecutable(staging)
-                    target.deleteRecursively()
-                    check(staging.renameTo(target)) { "Unable to move module into storage." }
-                    markScriptsExecutable(target)
-                    readModule(target) ?: error("Installed module is unreadable.")
+                    // Verify staging is a valid readable module before touching existing target
+                    checkNotNull(readModule(staging)) { "Staged module is unreadable." }
+
+                    val hadExistingTarget = target.exists()
+                    if (hadExistingTarget) {
+                        check(target.renameTo(backup)) { "Unable to backup existing module before update." }
+                    }
+
+                    try {
+                        if (!staging.renameTo(target)) {
+                            error("Unable to move module into storage.")
+                        }
+                        markScriptsExecutable(target)
+                        val installed = readModule(target) ?: error("Installed module is unreadable.")
+                        backup.deleteRecursively()
+                        installed
+                    } catch (t: Throwable) {
+                        target.deleteRecursively()
+                        if (hadExistingTarget && backup.exists()) {
+                            backup.renameTo(target)
+                        }
+                        staging.deleteRecursively()
+                        throw t
+                    }
                 }
             }
         } finally {
@@ -158,6 +268,7 @@ object AdbModuleManager {
 
     suspend fun delete(module: AdbModule) = withContext(Dispatchers.IO) {
         ModuleSettings.setModuleTrusted(module.id, false)
+        ModuleSettings.setModuleUpdateIgnored(module.id, false)
         module.directory.deleteRecursively()
     }
 
@@ -174,18 +285,20 @@ object AdbModuleManager {
         runModuleScript(module, script, module.lastServiceLog)
     }
 
-    suspend fun runEnabledServicesIfAllowed(context: Context): List<Pair<AdbModule, ModuleActionResult>> =
-        withContext(Dispatchers.IO) {
-            if (servicesStartedForBinder) return@withContext emptyList()
-            if (!Shizuku.pingBinder()) return@withContext emptyList()
+    suspend fun runEnabledServicesIfAllowed(
+        context: Context,
+        force: Boolean = false
+    ): List<Pair<AdbModule, ModuleActionResult>> = withContext(Dispatchers.IO) {
+        if (!force && servicesStartedForBinder) return@withContext emptyList()
+        if (!Shizuku.pingBinder()) return@withContext emptyList()
 
-            servicesStartedForBinder = true
-            listModules(context)
-                .filter { it.enabled && it.hasService && ModuleSettings.canRunService(it) && ModuleSettings.canRunBackground(it) }
-                .mapNotNull { module ->
-                    runCatching { module to runService(module) }.getOrNull()
-                }
-        }
+        servicesStartedForBinder = true
+        listModules(context)
+            .filter { it.enabled && it.hasService && ModuleSettings.canRunService(it) && ModuleSettings.canRunBackground(it) }
+            .mapNotNull { module ->
+                runCatching { module to runService(module) }.getOrNull()
+            }
+    }
 
     fun resetServiceRunGuard() {
         servicesStartedForBinder = false
@@ -223,17 +336,19 @@ object AdbModuleManager {
         )
 
         runCatching { ParcelFileDescriptor.AutoCloseOutputStream(remote.getOutputStream()).close() }
+        val stdoutPfd = remote.getInputStream()
+        val stderrPfd = remote.getErrorStream()
         var stdout = ""
         var stderr = ""
         val stdoutThread = Thread {
             try {
-                stdout = readStreamTail(remote.getInputStream())
+                stdout = readStreamTail(stdoutPfd)
             } catch (_: Exception) {
             }
         }
         val stderrThread = Thread {
             try {
-                stderr = readStreamTail(remote.getErrorStream())
+                stderr = readStreamTail(stderrPfd)
             } catch (_: Exception) {
             }
         }
@@ -244,10 +359,20 @@ object AdbModuleManager {
             remote.exitValue()
         } else {
             remote.destroy()
+            runCatching { stdoutPfd.close() }
+            runCatching { stderrPfd.close() }
             124
         }
-        stdoutThread.join(1000)
-        stderrThread.join(1000)
+        stdoutThread.join(500)
+        if (stdoutThread.isAlive) {
+            runCatching { stdoutPfd.close() }
+            stdoutThread.join(250)
+        }
+        stderrThread.join(500)
+        if (stderrThread.isAlive) {
+            runCatching { stderrPfd.close() }
+            stderrThread.join(250)
+        }
         val result = ModuleActionResult(
             exitCode = exitCode,
             stdout = stdout,
@@ -321,7 +446,7 @@ object AdbModuleManager {
         )
     }
 
-    private fun parseModuleProp(raw: String): Map<String, String> {
+    internal fun parseModuleProp(raw: String): Map<String, String> {
         return raw.lineSequence()
             .map { it.trim() }
             .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
@@ -331,7 +456,7 @@ object AdbModuleManager {
             }
     }
 
-    private fun cleanZipName(name: String): String {
+    internal fun cleanZipName(name: String): String {
         val clean = name.replace('\\', '/').trim('/')
         require(clean.isNotBlank()) { "Invalid ZIP entry." }
         val parts = clean.split('/')
@@ -341,7 +466,7 @@ object AdbModuleManager {
         return clean
     }
 
-    private fun ensureInside(root: File, child: File) {
+    internal fun ensureInside(root: File, child: File) {
         val rootPath = root.canonicalPath
         val childPath = child.canonicalPath
         require(childPath == rootPath || childPath.startsWith("$rootPath/")) {

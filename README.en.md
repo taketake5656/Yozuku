@@ -8,20 +8,40 @@
 
 **Yozuku** is a Japanese-localized build of **Nightzuku**, kerneldroid's modern fork of **Shizuku**. The display name replaces "Night" with its Japanese reading "Yo" (夜); the package ID remains `kerneldroid.nightzuku`. It provides a robust, high-performance interface for applications to use system APIs directly with elevated permissions (root/ADB).
 
-This project tracks the latest Android platform developments, including Android 16/17 target stability, introduces a revamped Modern Material 3 Expressive UI using Jetpack Compose, and includes a full ADB-backed ZIP modules runner.
+This project tracks the latest Android platform developments, including Android 16/17 target stability, introduces a revamped Modern Material 3 Expressive UI using Jetpack Compose, a **dual-wire** server/client protocol, and a full ADB-backed ZIP modules runner.
 
-> [!IMPORTANT]
-> **Migration Action Required:** Due to the package identity upgrade (`moe.shizuku.privileged.api` -> `kerneldroid.nightzuku`), you **MUST UNINSTALL** any older official Shizuku Manager app from your device before installing Yozuku. Otherwise, they will conflict.
 Upstream project reference: <https://github.com/RikkaApps/Shizuku>
+
+> [!NOTE]
+> **Migration from Shizuku is smooth — you do not need to uninstall the official Shizuku app.** Yozuku no longer declares the legacy `moe.shizuku.manager.permission.API_V23` permission (it is explicitly removed from the merged manifest), so there is no permission or authority conflict with the official Shizuku manager. See [Dual-wire architecture & migration](#dual-wire-architecture--migration).
 
 ## Fork additions
 
 - Jetpack Compose manager UI with Material 3 Expressive components, motion, switches, and rounded icon treatment.
-- Android 16/17 target work with current preview SDK/build tooling in this fork.
-- ADB Modules screen for installing and managing ZIP modules.
+- Dual-wire server/client protocol: a native zero-stub Nightzuku wire alongside the classic Shizuku wire.
+- Cryptographic SHA-256 package and manager certificate pinning (with Android 9+ `signingCertificateHistory` key-rotation lineage support) across server, `UserService` hosts, and ADB package reconciliation.
+- Global client access pause switch (`accessPaused`), per-UID `UserService` teardown, one-time grant process-death cleanup, and system Settings runtime permission revocation sync.
+- Hardened permission confirmation dialog (`RequestPermissionActivity`) with overlay hiding (`setHideOverlayWindows`), tap-grace window, Unicode/Bidi label sanitization, and shared-UID sibling package disclosure.
+- Android 16/17 target work with current preview SDK/build tooling in this fork (including `Android17Compat` and single-argument `IUserManager.getUsers` fallback).
+- ADB Modules screen for installing and managing ZIP modules with streaming size budgets and isolated shell execution.
 - Module features: `module.prop`, banner, enable/disable switch, `action.sh`, policy-gated `service.sh`, local WebUI, delete, path checks, size limits, output limits, and last-run logs.
 - Module policy settings: Safe mode, Full access, and background action control.
+- Online Module Catalog (GitHub Topics discovery) with downloads count and per-module out-of-date detection.
+- NightDog watchdog for server health and recovery (monitoring critical and optional platform services).
 - Debug test module under `test-modules/adb-test-module.zip`.
+
+## Dual-wire architecture & migration
+
+Yozuku runs a native, zero-stub protocol alongside the classic Shizuku wire, and routes each client to the wire it declares.
+
+- **Native wire** — `kerneldroid.nightzuku.INightService` (`NightClient` / `NightProtocol` / `NightServiceEndpoint`): flat `Parcel` transactions, per-UID capability masks, a guarded `transactRemote`, and a fast one-shot `execFast`. No `moe.shizuku.api` stub classes are required on the server side.
+- **Legacy wire** — the classic Shizuku binder, delivered to clients that still request the legacy permissions.
+- **Routing** — `ClientRouting` decides, per package, which wire(s) a client receives; `TransactGuard` verifies target binders before a transaction is forwarded.
+
+This is what makes migration calm:
+
+- The legacy `moe.shizuku.manager.permission.API_V23` is **not** declared by Yozuku (it is stripped via `tools:node="remove"`), so the official Shizuku app and Yozuku can coexist and do not fight over the same permission/authority.
+- Apps that already integrate the Shizuku API keep working through the legacy wire — you can migrate to the native wire at your own pace.
 
 ## Documentation
 
@@ -33,6 +53,7 @@ Upstream project reference: <https://github.com/RikkaApps/Shizuku>
 - [Wear OS Pairing Guide](docs/wearos-pairing.en.md)
 - [Android TV Support](docs/android-tv-support.en.md)
 - [NightDog Watchdog](docs/nightdog.en.md)
+- [NightDog background work and module updates](docs/nightdog-updates.en.md)
 - [GitHub Catalog](docs/github-catalog.en.md)
 
 ## Background
@@ -134,6 +155,7 @@ All code is licensed under Apache 2.0.
 - **Identity**: You may not use `Shizuku` as an app name or use `moe.shizuku.privileged.api` as an application ID in derived works. The current package identity is `kerneldroid.nightzuku`.
 
 
-## Credits 
+## Credits
 
-[**Razgame**](https://github.com/RazGame/Shizuku) for [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842)
+- [**Razgame**](https://github.com/RazGame/Shizuku) — for [app list fix](https://github.com/kerneldroid/Nightzuku/commit/6ea7e74984f860398760f5111a15083ea004c842).
+- [**Porter** (d4rken-org)](https://github.com/d4rken-org/porter) — for architectural and security hardening ideas (package signing identity verification, root/ADB config ownership handoff, permission dialog anti-spoofing, and wireless ADB/mDNS lifecycle edge-case analysis), re-engineered natively for Nightzuku's dual-wire architecture without code copying.

@@ -29,15 +29,35 @@ int  checkUidPermission(int uid, String permissionName, int deviceId)
 `IPackageManager`:
 
 ```
-PackageInfo     getPackageInfo(String, long, int)         変更なし
-ApplicationInfo getApplicationInfo(String, long, int)     変更なし
+PackageInfo     getPackageInfo(String, long, int)         17 では変更なし。フラグの幅の注意を参照
+ApplicationInfo getApplicationInfo(String, long, int)     17 では変更なし。フラグの幅の注意を参照
                 getInstalledPackages(long, int)           17 で ParceledListSlice -> PackageInfoList
                 getInstalledApplications(long, int)       変更なし
 ```
 
-`getInstalledPackages` は**戻り値の型**が変わりました。JVM のメソッドディスクリプタには戻り値の型が含まれるため、古いディスクリプタでは解決できなくなり、呼び出しは `NoSuchMethodError` で失敗します。`getPackageInfo` と `getApplicationInfo` は変わって*いない*ことに注意してください。
+`getInstalledPackages` は**戻り値の型**が変わりました。JVM のメソッドディスクリプタには戻り値の型が含まれるため、古いディスクリプタでは解決できなくなり、呼び出しは `NoSuchMethodError` で失敗します。`getPackageInfo` と `getApplicationInfo` は Android 17 では変わって*いません*が、古いリリースまで含めると同じ形ではありません。
 
-この変更は Android 17 に限ったものではありません。`android15-release` の時点で、すでに 4 引数の権限メソッドのシグネチャになっています。
+### API 33 でのフラグの幅の変更
+
+Android 13（API 33）で `PackageInfoFlags` と `ApplicationInfoFlags` が導入され、両メソッドの非公開のフラグ引数が `int` から `long` に広がりました。
+
+```
+API 33+    PackageInfo     getPackageInfo(String, long, int)
+API <= 32  PackageInfo     getPackageInfo(String, int, int)
+API 33+    ApplicationInfo getApplicationInfo(String, long, int)
+API <= 32  ApplicationInfo getApplicationInfo(String, int, int)
+```
+
+`Android17Compat` は `Class` が完全に一致するかどうかでメソッドを解決します。そのため、候補が `(String, long, int)` だけだと、API 33 以降には一致しますが、Android 12L 以前では何も見つかりません。この失敗の影響はその場だけでは済みません。そのような端末では `getApplicationInfo` が `null` を返し、`ShizukuService` はマネージャーのパッケージを解決できずに `MANAGER_APP_NOT_FOUND`（50）で終了します。スターターは終了コード 50 を「マネージャーがアンインストールされた」と解釈してサーバーの再起動をやめ、最終的に画面にはサービスが初期化されなかったと表示されます。
+
+そこで、両メソッドには候補を 2 つ持たせています。
+
+- 1 つ目は `(String, long, int)`。API 33 以降では今の形をそのまま使い、値の切り詰めは起きません。
+- 2 つ目は `(String, int, int)` で、`flags.toInt()` を渡します。Android 12L 以前のためのものです。
+
+`int` の候補が選ばれるのは、`long` の形がリフレクションで合わないと判定された後だけです。そのため、両方の形に対応している端末が誤って古い経路を通ることはありません。このレイヤーが渡すフラグの値は 32 ビットに収まるもの（`0` と権限のビット）だけなので、これらの呼び出しでは `toInt()` で情報は失われません。64 ビットのフラグ値の上位 32 ビットが必要な API には、この代替の候補を使い回さないでください。
+
+この変更は Android 17 に限ったものではありません。`android15-release` の時点で、すでに 4 引数の権限メソッドのシグネチャになっています。また、上のフラグの幅の違いは 15、16、17 のどのリリースでもなく、API 33 で生じたものです。
 
 ## Android17Compat がしていること
 

@@ -5,17 +5,13 @@
 
 package moe.shizuku.manager.module.update
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,34 +19,33 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.module.catalog.TokenStore
+import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.ui.compose.SettingsItem
 import moe.shizuku.manager.ui.compose.SettingsSection
 import moe.shizuku.manager.ui.compose.SettingsSwitchItem
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
-import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
 
 @Composable
@@ -58,11 +53,35 @@ fun UpdateSettingsScreen(
     onNavigateUp: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var backgroundCheckEnabled by remember { mutableStateOf(ModuleSettings.isBackgroundCheckEnabled()) }
+    var allowBackgroundActions by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
     var catalogEnabled by remember { mutableStateOf(ModuleSettings.isCatalogEnabled()) }
     var updateFrequency by remember { mutableStateOf(ModuleSettings.getUpdateFrequency()) }
+    var autoUpdateEnabled by remember { mutableStateOf(ModuleSettings.isAutoUpdateEnabled()) }
+    var wifiOnly by remember { mutableStateOf(ModuleSettings.isUpdateWifiOnly()) }
+    var notificationsEnabled by remember { mutableStateOf(ModuleSettings.isUpdateNotificationsEnabled()) }
     var installMode by remember { mutableStateOf(ModuleSettings.getInstallMode()) }
     var githubPat by remember { mutableStateOf(TokenStore.getToken(context) ?: "") }
     var showPatDialog by remember { mutableStateOf(false) }
+
+    val isChecking by NightDogClient.isCheckingModules.collectAsState()
+    val lastReport by NightDogClient.lastCheckReport.collectAsState()
+
+    val checkSummary = when {
+        isChecking -> stringResource(R.string.modules_background_check_running)
+        lastReport != null -> {
+            val report = lastReport!!
+            stringResource(
+                R.string.modules_background_check_report_summary,
+                report.healthyModules,
+                report.totalModules,
+                report.updatesAvailableCount,
+                report.issuesCount
+            )
+        }
+        else -> stringResource(R.string.modules_background_check_never)
+    }
 
     ShizukuExpressiveTheme {
         ShizukuLazyScaffold(
@@ -70,17 +89,61 @@ fun UpdateSettingsScreen(
             onNavigateUp = onNavigateUp
         ) {
             item {
-                SettingsSection(title = stringResource(R.string.update_settings_catalog)) {
+                SettingsSection(title = stringResource(R.string.nightdog_section_title)) {
                     SettingsSwitchItem(
                         index = 0,
-                        count = 1,
-                        icon = R.drawable.ic_outline_notifications_active_24,
-                        title = stringResource(R.string.update_settings_catalog_enabled),
-                        summary = stringResource(R.string.update_settings_catalog_enabled_summary),
-                        checked = catalogEnabled,
+                        count = 3,
+                        icon = R.drawable.ic_shield_24,
+                        title = stringResource(R.string.modules_background_check_title),
+                        summary = stringResource(R.string.modules_background_check_summary),
+                        checked = backgroundCheckEnabled,
                         onCheckedChange = {
-                            catalogEnabled = it
-                            ModuleSettings.setCatalogEnabled(it)
+                            backgroundCheckEnabled = it
+                            ModuleSettings.setBackgroundCheckEnabled(it)
+                            if (it) {
+                                NightDogClient.ensurePeriodicLoop()
+                            }
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 1,
+                        count = 3,
+                        icon = R.drawable.ic_terminal_24,
+                        title = stringResource(R.string.modules_background_actions),
+                        summary = stringResource(R.string.modules_background_actions_summary),
+                        checked = allowBackgroundActions,
+                        onCheckedChange = {
+                            allowBackgroundActions = it
+                            ModuleSettings.setAllowBackgroundActions(it)
+                        }
+                    )
+                    SettingsItem(
+                        index = 2,
+                        count = 3,
+                        icon = R.drawable.ic_server_restart,
+                        title = stringResource(R.string.modules_background_check_run_now),
+                        summary = checkSummary,
+                        showChevron = false,
+                        onClick = {
+                            if (!isChecking) {
+                                scope.launch {
+                                    val report = NightDogClient.runManualCheck(
+                                        context = context,
+                                        checkUpdates = true,
+                                        forceRunServices = true
+                                    )
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(
+                                            R.string.modules_background_check_toast,
+                                            report.healthyModules,
+                                            report.totalModules,
+                                            report.updatesAvailableCount
+                                        ),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
                         }
                     )
                 }
@@ -93,10 +156,48 @@ fun UpdateSettingsScreen(
             item {
                 SettingsSection(title = stringResource(R.string.update_settings_frequency)) {
                     UpdateFrequencyDropdown(
+                        index = 0,
+                        count = 4,
                         selected = updateFrequency,
                         onSelect = {
                             updateFrequency = it
                             ModuleSettings.setUpdateFrequency(it)
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 1,
+                        count = 4,
+                        icon = R.drawable.ic_outline_arrow_upward_24,
+                        title = stringResource(R.string.update_settings_auto_update),
+                        summary = stringResource(R.string.update_settings_auto_update_summary),
+                        checked = autoUpdateEnabled,
+                        onCheckedChange = {
+                            autoUpdateEnabled = it
+                            ModuleSettings.setAutoUpdateEnabled(it)
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 2,
+                        count = 4,
+                        icon = R.drawable.ic_settings_outline_24dp,
+                        title = stringResource(R.string.update_settings_wifi_only),
+                        summary = stringResource(R.string.update_settings_wifi_only_summary),
+                        checked = wifiOnly,
+                        onCheckedChange = {
+                            wifiOnly = it
+                            ModuleSettings.setUpdateWifiOnly(it)
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 3,
+                        count = 4,
+                        icon = R.drawable.ic_outline_notifications_active_24,
+                        title = stringResource(R.string.update_settings_notifications),
+                        summary = stringResource(R.string.update_settings_notifications_summary),
+                        checked = notificationsEnabled,
+                        onCheckedChange = {
+                            notificationsEnabled = it
+                            ModuleSettings.setUpdateNotificationsEnabled(it)
                         }
                     )
                 }
@@ -113,6 +214,27 @@ fun UpdateSettingsScreen(
                         onSelect = {
                             installMode = it
                             ModuleSettings.setInstallMode(it)
+                        }
+                    )
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(8.dp))
+            }
+
+            item {
+                SettingsSection(title = stringResource(R.string.update_settings_catalog)) {
+                    SettingsSwitchItem(
+                        index = 0,
+                        count = 1,
+                        icon = R.drawable.ic_outline_store_24,
+                        title = stringResource(R.string.update_settings_catalog_enabled),
+                        summary = stringResource(R.string.update_settings_catalog_enabled_summary),
+                        checked = catalogEnabled,
+                        onCheckedChange = {
+                            catalogEnabled = it
+                            ModuleSettings.setCatalogEnabled(it)
                         }
                     )
                 }
@@ -175,6 +297,8 @@ fun UpdateSettingsScreen(
 
 @Composable
 private fun UpdateFrequencyDropdown(
+    index: Int,
+    count: Int,
     selected: ModuleSettings.UpdateFrequency,
     onSelect: (ModuleSettings.UpdateFrequency) -> Unit
 ) {
@@ -185,15 +309,19 @@ private fun UpdateFrequencyDropdown(
         onExpandedChange = { expanded = !expanded }
     ) {
         SettingsItem(
-            index = 0,
-            count = 1,
+            index = index,
+            count = count,
             icon = R.drawable.ic_outline_notifications_active_24,
             title = stringResource(R.string.update_settings_frequency_label),
-            summary = stringResource(when (selected) {
-                ModuleSettings.UpdateFrequency.MANUAL -> R.string.update_settings_frequency_manual
-                ModuleSettings.UpdateFrequency.DAILY -> R.string.update_settings_frequency_daily
-                ModuleSettings.UpdateFrequency.WEEKLY -> R.string.update_settings_frequency_weekly
-            }),
+            summary = stringResource(
+                when (selected) {
+                    ModuleSettings.UpdateFrequency.MANUAL -> R.string.update_settings_frequency_manual
+                    ModuleSettings.UpdateFrequency.ON_START -> R.string.update_settings_frequency_on_start
+                    ModuleSettings.UpdateFrequency.SIX_HOURS -> R.string.update_settings_frequency_6h
+                    ModuleSettings.UpdateFrequency.DAILY -> R.string.update_settings_frequency_daily
+                    ModuleSettings.UpdateFrequency.WEEKLY -> R.string.update_settings_frequency_weekly
+                }
+            ),
             showChevron = false,
             onClick = { expanded = true },
             trailing = {
@@ -209,6 +337,20 @@ private fun UpdateFrequencyDropdown(
                 text = { Text(stringResource(R.string.update_settings_frequency_manual)) },
                 onClick = {
                     onSelect(ModuleSettings.UpdateFrequency.MANUAL)
+                    expanded = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.update_settings_frequency_on_start)) },
+                onClick = {
+                    onSelect(ModuleSettings.UpdateFrequency.ON_START)
+                    expanded = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.update_settings_frequency_6h)) },
+                onClick = {
+                    onSelect(ModuleSettings.UpdateFrequency.SIX_HOURS)
                     expanded = false
                 }
             )
@@ -246,10 +388,12 @@ private fun InstallModeDropdown(
             count = 1,
             icon = R.drawable.ic_outline_arrow_upward_24,
             title = stringResource(R.string.update_settings_install_mode_label),
-            summary = stringResource(when (selected) {
-                ModuleSettings.InstallMode.SOURCES -> R.string.update_settings_install_mode_sources
-                ModuleSettings.InstallMode.RELEASE -> R.string.update_settings_install_mode_release
-            }),
+            summary = stringResource(
+                when (selected) {
+                    ModuleSettings.InstallMode.SOURCES -> R.string.update_settings_install_mode_sources
+                    ModuleSettings.InstallMode.RELEASE -> R.string.update_settings_install_mode_release
+                }
+            ),
             showChevron = false,
             onClick = { expanded = true },
             trailing = {

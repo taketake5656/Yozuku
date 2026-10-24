@@ -6,15 +6,14 @@ import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +24,7 @@ import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.adb.AdbClient
 import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.AdbKeyException
+import moe.shizuku.manager.adb.AdbPairingRequiredException
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.ui.compose.ExpressiveCard
@@ -82,8 +82,6 @@ class StarterActivity : AppActivity() {
             }
         }
 
-        // Register the sticky listener immediately so the screen closes as soon as the server
-        // binder arrives, without depending on the starter output text.
         val listener = object : Shizuku.OnBinderReceivedListener {
             override fun onBinderReceived() {
                 Shizuku.removeBinderReceivedListener(this)
@@ -109,7 +107,7 @@ class StarterActivity : AppActivity() {
                         is AdbKeyException -> R.string.adb_error_key_store
                         is NotRootedException -> R.string.start_with_root_failed
                         is ConnectException -> R.string.cannot_connect_port
-                        is SSLProtocolException -> R.string.adb_pair_required
+                        is AdbPairingRequiredException, is SSLProtocolException -> R.string.adb_pair_required
                         else -> 0
                     }
                 } else 0)
@@ -301,15 +299,16 @@ private class ViewModel(context: Context, root: Boolean, host: String?, port: In
                 return@launch
             }
 
-            AdbClient(host, port, key).runCatching {
-                connect()
-                shellCommand(Starter.internalCommand) {
-                    synchronized(outputLock) {
-                        sb.append(String(it))
+            runCatching {
+                AdbClient(host, port, key).use { client ->
+                    client.connect()
+                    client.shellCommand(Starter.internalCommand) {
+                        synchronized(outputLock) {
+                            sb.append(String(it))
+                        }
+                        postResult()
                     }
-                    postResult()
                 }
-                close()
             }.onFailure {
                 it.printStackTrace()
 

@@ -8,6 +8,9 @@ object ModuleSettings {
 
     private const val KEY_ACCESS_MODE = "adb_modules_access_mode"
     private const val KEY_ALLOW_BACKGROUND_ACTIONS = "adb_modules_allow_background_actions"
+    private const val KEY_BACKGROUND_CHECK_ENABLED = "adb_modules_background_check"
+    private const val KEY_LAST_BACKGROUND_CHECK_TIME = "adb_modules_last_background_check_time"
+    private const val KEY_LAST_UPDATE_CHECK_TIME = "adb_modules_last_update_check_time"
     private const val KEY_CUSTOM_ACTION = "adb_modules_custom_action"
     private const val KEY_CUSTOM_SERVICE = "adb_modules_custom_service"
     private const val KEY_CUSTOM_WEB_BRIDGE = "adb_modules_custom_web_bridge"
@@ -16,10 +19,18 @@ object ModuleSettings {
     private const val KEY_RECOMMAND_WEBUI = "adb_modules_recommand_webui"
     private const val KEY_RECOMMAND_ACTION = "adb_modules_recommand_action"
     private const val KEY_TRUSTED_MODULES = "adb_modules_trusted_modules"
+    private const val KEY_IGNORED_UPDATE_MODULES = "adb_modules_ignored_update_modules"
     private const val KEY_CONNECTOR_ENABLED = "shizuku_connector_enabled"
     private const val KEY_UPDATE_FREQUENCY = "adb_modules_update_frequency"
+    private const val KEY_AUTO_UPDATE_ENABLED = "adb_modules_auto_update"
+    private const val KEY_UPDATE_WIFI_ONLY = "adb_modules_update_wifi_only"
+    private const val KEY_UPDATE_NOTIFICATIONS = "adb_modules_update_notifications"
     private const val KEY_INSTALL_MODE = "adb_modules_install_mode"
     private const val KEY_CATALOG_ENABLED = "adb_modules_catalog_enabled"
+
+    private const val SIX_HOURS_MS = 6L * 60L * 60L * 1000L
+    private const val DAY_MS = 24L * 60L * 60L * 1000L
+    private const val WEEK_MS = 7L * DAY_MS
 
     enum class AccessMode(
         val value: String,
@@ -73,6 +84,86 @@ object ModuleSettings {
 
     fun setAllowBackgroundActions(value: Boolean) {
         ShizukuSettings.getPreferences().edit().putBoolean(KEY_ALLOW_BACKGROUND_ACTIONS, value).apply()
+    }
+
+    fun isBackgroundCheckEnabled(): Boolean {
+        return ShizukuSettings.getPreferences().getBoolean(KEY_BACKGROUND_CHECK_ENABLED, true)
+    }
+
+    fun setBackgroundCheckEnabled(value: Boolean) {
+        ShizukuSettings.getPreferences().edit().putBoolean(KEY_BACKGROUND_CHECK_ENABLED, value).apply()
+    }
+
+    fun getLastBackgroundCheckTime(): Long {
+        return ShizukuSettings.getPreferences().getLong(KEY_LAST_BACKGROUND_CHECK_TIME, 0L)
+    }
+
+    fun setLastBackgroundCheckTime(timestampMs: Long) {
+        ShizukuSettings.getPreferences().edit().putLong(KEY_LAST_BACKGROUND_CHECK_TIME, timestampMs).apply()
+    }
+
+    fun getLastUpdateCheckTime(): Long {
+        return ShizukuSettings.getPreferences().getLong(KEY_LAST_UPDATE_CHECK_TIME, 0L)
+    }
+
+    fun setLastUpdateCheckTime(timestampMs: Long) {
+        ShizukuSettings.getPreferences().edit().putLong(KEY_LAST_UPDATE_CHECK_TIME, timestampMs).apply()
+    }
+
+    fun isUpdateCheckDue(
+        nowMs: Long = System.currentTimeMillis(),
+        onServerStart: Boolean = false
+    ): Boolean {
+        val last = getLastUpdateCheckTime()
+        return when (getUpdateFrequency()) {
+            UpdateFrequency.MANUAL -> false
+            UpdateFrequency.ON_START -> onServerStart
+            UpdateFrequency.SIX_HOURS -> last <= 0L || (nowMs - last) >= SIX_HOURS_MS
+            UpdateFrequency.DAILY -> last <= 0L || (nowMs - last) >= DAY_MS
+            UpdateFrequency.WEEKLY -> last <= 0L || (nowMs - last) >= WEEK_MS
+        }
+    }
+
+    fun isAutoUpdateEnabled(): Boolean {
+        return ShizukuSettings.getPreferences().getBoolean(KEY_AUTO_UPDATE_ENABLED, false)
+    }
+
+    fun setAutoUpdateEnabled(enabled: Boolean) {
+        ShizukuSettings.getPreferences().edit().putBoolean(KEY_AUTO_UPDATE_ENABLED, enabled).apply()
+    }
+
+    fun isUpdateWifiOnly(): Boolean {
+        return ShizukuSettings.getPreferences().getBoolean(KEY_UPDATE_WIFI_ONLY, true)
+    }
+
+    fun setUpdateWifiOnly(wifiOnly: Boolean) {
+        ShizukuSettings.getPreferences().edit().putBoolean(KEY_UPDATE_WIFI_ONLY, wifiOnly).apply()
+    }
+
+    fun isUpdateNotificationsEnabled(): Boolean {
+        return ShizukuSettings.getPreferences().getBoolean(KEY_UPDATE_NOTIFICATIONS, true)
+    }
+
+    fun setUpdateNotificationsEnabled(enabled: Boolean) {
+        ShizukuSettings.getPreferences().edit().putBoolean(KEY_UPDATE_NOTIFICATIONS, enabled).apply()
+    }
+
+    fun isModuleUpdateIgnored(moduleId: String): Boolean {
+        return ShizukuSettings.getPreferences()
+            .getStringSet(KEY_IGNORED_UPDATE_MODULES, emptySet())
+            ?.contains(moduleId)
+            ?: false
+    }
+
+    fun setModuleUpdateIgnored(moduleId: String, ignored: Boolean) {
+        val prefs = ShizukuSettings.getPreferences()
+        val current = prefs.getStringSet(KEY_IGNORED_UPDATE_MODULES, emptySet()).orEmpty().toMutableSet()
+        if (ignored) {
+            current += moduleId
+        } else {
+            current -= moduleId
+        }
+        prefs.edit().putStringSet(KEY_IGNORED_UPDATE_MODULES, current).apply()
     }
 
     fun getCustomPermissions(): CustomPermissions {
@@ -204,6 +295,8 @@ object ModuleSettings {
 
     enum class UpdateFrequency(val value: String) {
         MANUAL("manual"),
+        ON_START("on_start"),
+        SIX_HOURS("6h"),
         DAILY("daily"),
         WEEKLY("weekly");
 

@@ -1,8 +1,8 @@
-# NightDog
+# NightDog とバックグラウンドでのモジュールの確認
 
 **日本語** | [English](nightdog.en.md)
 
-NightDog は、Yozuku のサーバープロセス（`shizuku_server`）に組み込まれたウォッチドッグです。メインスレッドの応答と、重要な Android システムサービスとの接続を監視します。異常が起きたらサーバーを終了させ、ネイティブのスターターデーモンがきれいに再起動できるようにします。
+NightDog は、Yozuku のサーバープロセス（`shizuku_server`）に組み込まれたウォッチドッグです。あわせて、Yozuku マネージャーでのバックグラウンドの処理（モジュールの状態の確認、`service.sh` の実行、アップデートの確認）もまとめて受け持ちます。
 
 ## 仕組み
 
@@ -22,13 +22,30 @@ NightDog は、Yozuku のサーバープロセス（`shizuku_server`）に組み
      - binder をマネージャーとクライアントアプリに送り直す
    - 10 回試しても重要なサービスが復旧しない場合は、サーバープロセスを終了させます。スターターデーモンがサーバーを起動し直し、システムサービスの準備ができるのをきちんと待てるようにするためです。
 
-## 有効化と無効化
+3. **バックグラウンドでのモジュールの確認（`NightDogClient`）**:
+   - `NightDogClient` は、`ShizukuApplication` で `OnBinderReceivedListener` と `OnBinderDeadListener` をアプリ全体に登録します。
+     - `shizuku_server` の binder が停止すると、`AdbModuleManager` の service の実行済みの記録をリセットします。そのため、サーバーが復旧すると `service.sh` が自動でもう一度実行されます。
+     - サーバーの binder を受け取ったとき（起動時、手動での開始、NightDog による復旧）と、バックグラウンドでの確認が有効な間は 15 分ごとに、`runBackgroundCheck()` を実行します。
+       1. `BINDER_TRANSACTION_getNightDogStatus`（`10005`）で、サーバーのウォッチドッグの最新の状態（接続中のシステムサービス、再接続の合計回数、ハートビートの回数、稼働時間）を取得します。
+       2. `adb_modules` に残った古い `.installing` の作業ディレクトリを削除します。
+       3. バックグラウンドアクション（`allowBackgroundActions`）が許可されていれば、有効なモジュールの `service.sh` を実行します（`AdbModuleManager.runEnabledServicesIfAllowed`）。
+       4. インストール済みのすべてのモジュールの整合性を調べます（`AdbModuleManager.inspectModuleHealth`）。対象は `module.prop`、スクリプトの実行権限、`action.sh` と `service.sh` のサイズ、`logs/service-last.log` に記録された 0 以外の終了コード、WebUI の `index.html` です。
+       5. 設定した間隔（`DAILY` / `WEEKLY`）または手動の操作で、`UpdateChecker` を使ってモジュールのアップデートを確認します。
 
-NightDog は、スマートフォン、Wear OS、Android TV のいずれでも、**設定 → 試験運用機能 → NightDog ウォッチドッグ** で切り替えます。
+## 画面での操作
 
-- `NightDogClient` は、Binder IPC（`BINDER_TRANSACTION_setNightDogEnabled` / `BINDER_TRANSACTION_getNightDogEnabled`）で `ShizukuService` とやりとりします。
-- サーバー側では、`ShizukuConfigManager` が `nightdog_enabled` の変更をすぐに `/data/user_de/0/com.android.shell/shizuku.json` に書き込みます。
-- サーバーが動いていないときにマネージャーで切り替えた場合、`NightDogClient` は設定をアプリ内に保存しておき、サーバーの binder を受け取った時点で自動的に同期します。
+NightDog とバックグラウンドでのモジュールの確認は、スマートフォン、Android TV、Wear OS のいずれでも操作できます。
+
+- **設定 → 試験運用機能**（`LabFeaturesActivity`、`TvLabMenuScreen`）:
+  - **NightDog ウォッチドッグ** の切り替え（`BINDER_TRANSACTION_setNightDogEnabled` / `BINDER_TRANSACTION_getNightDogEnabled`）
+  - **バックグラウンドでのモジュールの確認（NightDog）** の切り替え（`ModuleSettings.isBackgroundCheckEnabled()`）
+  - **バックグラウンドアクションを許可**（`service.sh`）の切り替え（`ModuleSettings.allowBackgroundActions()`）
+  - 最新の状態の表示と、手動で確認するボタン（**モジュールとサーバーを今すぐ確認**）
+- **設定 → モジュール → アップデートと確認の設定**（`SettingsActivity`、`UpdateSettingsScreen`、`TvSettingsScreen`、`WearSettingsScreen`）:
+  - バックグラウンドアクション、バックグラウンドでの確認、アップデートを確認する間隔（`手動`、`毎日`、`毎週`）、既定のインストール方法（`ソースからビルド` か `リリース ZIP をダウンロード`）、GitHub のトークンをすべて設定できます。
+- **ADB モジュールの画面**（`ModulesActivity`、`TvModulesScreen`、`WearModulesScreen`）:
+  - 上部に NightDog によるモジュールの確認のバナーがあり、すぐに確認するボタンとバックグラウンドアクションのスイッチがあります。
+  - モジュールごとに、状態のバッジ（`正常` / スクリプトの終了コードの問題）、バックグラウンドの許可のバッジ、アップデートのバッジ（`アップデート: vX.Y`）が表示され、ワンタップの **アップデート** ボタン（`ModuleInstaller.updateModule()`）があります。
 
 ## スターターの復旧動作
 
@@ -53,14 +70,22 @@ NightDog は、スマートフォン、Wear OS、Android TV のいずれでも�
 | バックオフの範囲 | 5〜60 秒 | 再接続に失敗したときの、次の試行までの指数バックオフの待ち時間 |
 | 再接続の最大回数 | 10 回 | この回数を超えると、スターターに復旧させるためサーバーを終了させる |
 | 安定稼働でのリセット | 60 秒 | スターターの連続クラッシュ回数をリセットする、サーバーの稼働時間のしきい値 |
+| バックグラウンドでのモジュールの確認の間隔 | 15 分 | `NightDogClient` が、モジュールの状態と期限の来たアップデートを定期的に確認する間隔 |
 
 ## 関連ファイル
 
 - `nightdog/src/main/java/rikka/shizuku/nightdog/NightDog.kt`
 - `server/src/main/java/rikka/shizuku/server/ShizukuService.kt`
+- `server/src/main/java/rikka/shizuku/server/ServerConstants.kt`
 - `server/src/main/java/rikka/shizuku/server/ShizukuConfigManager.kt`
 - `server/src/main/java/rikka/shizuku/server/BinderSender.kt`
 - `rust/starter/src/main.rs`
 - `manager/src/main/java/moe/shizuku/manager/nightdog/NightDogClient.kt`
+- `manager/src/main/java/moe/shizuku/manager/module/AdbModuleManager.kt`
+- `manager/src/main/java/moe/shizuku/manager/module/ModuleSettings.kt`
+- `manager/src/main/java/moe/shizuku/manager/module/ModulesActivity.kt`
+- `manager/src/main/java/moe/shizuku/manager/module/update/UpdateSettingsScreen.kt`
 - `manager/src/main/java/moe/shizuku/manager/settings/LabFeaturesActivity.kt`
 - `manager/src/main/java/moe/shizuku/manager/settings/TvLabMenuScreen.kt`
+
+関連: [NightDog によるバックグラウンドの処理とモジュールのアップデート](nightdog-updates.md)

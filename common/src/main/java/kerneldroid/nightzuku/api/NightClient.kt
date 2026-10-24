@@ -2,6 +2,7 @@ package kerneldroid.nightzuku.api
 
 import android.content.pm.PackageManager
 import android.os.Binder
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -15,7 +16,8 @@ import java.util.concurrent.CopyOnWriteArrayList
  * High-speed, zero-stub client connector for the native Nightzuku API (`INightService`).
  *
  * Communicates with `NightServiceEndpoint` using flat Parcel serialization,
- * supports capability inspection, guarded `transactRemote`, and one-shot `execFast`.
+ * supports capability inspection, guarded `transactRemote`, one-shot `execFast`,
+ * global access pause control, and server diagnostics queries.
  */
 object NightClient {
 
@@ -32,6 +34,23 @@ object NightClient {
 
         val errorText: String
             get() = String(stderr, StandardCharsets.UTF_8)
+
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is ExecResult) return false
+            return exitCode == other.exitCode &&
+                timedOut == other.timedOut &&
+                stdout.contentEquals(other.stdout) &&
+                stderr.contentEquals(other.stderr)
+        }
+
+        override fun hashCode(): Int {
+            var result = exitCode
+            result = 31 * result + timedOut.hashCode()
+            result = 31 * result + stdout.contentHashCode()
+            result = 31 * result + stderr.contentHashCode()
+            return result
+        }
     }
 
     fun interface OnBinderReceivedListener {
@@ -114,18 +133,6 @@ object NightClient {
     fun onBinderReceived(newBinder: IBinder?, packageName: String?) {
         if (binder === newBinder) return
 
-        if (newBinder == null) {
-            binder = null
-            serverUid = -1
-            serverVersion = -1
-            serverContext = null
-            permissionGranted = false
-            capabilitiesMask = 0
-            binderReady = false
-            dispatchBinderDead()
-            return
-        }
-
         binder?.let { old ->
             try {
                 old.unlinkToDeath(deathRecipient, 0)
@@ -133,11 +140,27 @@ object NightClient {
             }
         }
 
+        if (newBinder == null) {
+            binder = null
+            serverUid = -1
+            serverVersion = -1
+            serverContext = null
+            permissionGranted = false
+            shouldShowRationale = false
+            capabilitiesMask = 0
+            binderReady = false
+            dispatchBinderDead()
+            return
+        }
+
         binder = newBinder
         try {
             newBinder.linkToDeath(deathRecipient, 0)
         } catch (t: Throwable) {
             Log.w(TAG, "linkToDeath failed", t)
+            binder = null
+            binderReady = false
+            return
         }
 
         if (packageName != null) {
@@ -147,6 +170,12 @@ object NightClient {
                 dispatchBinderReceived()
             } catch (t: Throwable) {
                 Log.w(TAG, "Flat attach handshake failed", t)
+                try {
+                    newBinder.unlinkToDeath(deathRecipient, 0)
+                } catch (_: Throwable) {
+                }
+                binder = null
+                binderReady = false
             }
         }
     }
@@ -325,6 +354,62 @@ object NightClient {
             reply.readException()
         } catch (e: RemoteException) {
             throw RuntimeException(e)
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
+    @JvmStatic
+    fun isAccessPaused(): Boolean {
+        val current = requireBinder()
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(NightProtocol.DESCRIPTOR)
+            current.transact(NightProtocol.TRANSACTION_GET_ACCESS_PAUSED, data, reply, 0)
+            reply.readException()
+            reply.readInt() != 0
+        } catch (e: RemoteException) {
+            throw RuntimeException(e)
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
+    @JvmStatic
+    fun setAccessPaused(paused: Boolean) {
+        val current = requireBinder()
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        try {
+            data.writeInterfaceToken(NightProtocol.DESCRIPTOR)
+            data.writeInt(if (paused) 1 else 0)
+            current.transact(NightProtocol.TRANSACTION_SET_ACCESS_PAUSED, data, reply, 0)
+            reply.readException()
+        } catch (e: RemoteException) {
+            throw RuntimeException(e)
+        } finally {
+            reply.recycle()
+            data.recycle()
+        }
+    }
+
+    @JvmStatic
+    fun getServerDiagnostics(): Bundle? {
+        val current = binder ?: return null
+        val data = Parcel.obtain()
+        val reply = Parcel.obtain()
+        return try {
+            data.writeInterfaceToken(NightProtocol.DESCRIPTOR)
+            if (!current.transact(NightProtocol.TRANSACTION_GET_SERVER_DIAGNOSTICS, data, reply, 0)) {
+                return null
+            }
+            reply.readException()
+            reply.readBundle(NightClient::class.java.classLoader)
+        } catch (_: Throwable) {
+            null
         } finally {
             reply.recycle()
             data.recycle()
