@@ -378,6 +378,9 @@ class ShizukuConfigManager : ConfigManager() {
             val version = obj.get("version")
                 ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }
                 ?.asInt
+            if (version == LEGACY_VERSION_2) {
+                return migrateFromV2(obj)
+            }
             if (version == null || version != ShizukuConfig.LATEST_VERSION) {
                 ConfigManager.LOGGER.w(
                     "Unsupported or missing config version %s (expected %d); starting empty",
@@ -392,6 +395,38 @@ class ShizukuConfigManager : ConfigManager() {
                 }
             }
         }
+
+        /**
+         * Yozuku fork: carry over decisions from the v2 file written by r57 and earlier, so that
+         * updating the app does not silently revoke every legacy-wire client. The flag bits are
+         * unchanged between v2 and v3; signers are left empty and backfilled on load.
+         */
+        private fun migrateFromV2(obj: JsonObject): ShizukuConfig {
+            val packages = ArrayList<ShizukuConfig.PackageEntry>()
+            val array = obj.get("packages")?.takeIf { it.isJsonArray }?.asJsonArray
+            array?.forEach { item ->
+                val entry = item as? JsonObject ?: return@forEach
+                val uid = entry.get("uid")
+                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asInt ?: return@forEach
+                val flags = entry.get("flags")
+                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asInt ?: return@forEach
+                val names = entry.get("packages")?.takeIf { it.isJsonArray }?.asJsonArray
+                    ?.mapNotNull { name -> name.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString }
+                    ?: emptyList()
+                packages.add(ShizukuConfig.PackageEntry(uid, flags).apply {
+                    this.packages = names.toMutableList()
+                })
+            }
+            val nightDogEnabled = obj.get("nightdog_enabled")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }?.asBoolean ?: false
+            ConfigManager.LOGGER.i("migrated config version %d to %d (%d entries)",
+                LEGACY_VERSION_2, ShizukuConfig.LATEST_VERSION, packages.size)
+            return ShizukuConfig(packages).apply {
+                this.nightDogEnabled = nightDogEnabled
+            }
+        }
+
+        private const val LEGACY_VERSION_2 = 2
 
         @JvmStatic
         internal fun toJson(config: ShizukuConfig): String = GSON_OUT.toJson(config)

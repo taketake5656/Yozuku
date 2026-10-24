@@ -54,7 +54,6 @@ class ShizukuConfigTest {
     fun `parseReader rejects outdated, future, or malformed config versions by starting clean`() {
         val payloads = listOf(
             """{"version":1,"packages":[{"uid":10234,"flags":1,"packages":["a"]}]}""",
-            """{"version":2,"accessPaused":true,"packages":[{"uid":10234,"flags":1,"packages":["a"]}]}""",
             """{"version":4,"accessPaused":true,"packages":[{"uid":10234,"flags":1,"packages":["a"]}]}""",
             """{"version":"3","accessPaused":true,"packages":[{"uid":10234,"flags":1,"packages":["a"]}]}""",
             """{"accessPaused":true,"packages":[{"uid":10234,"flags":1,"packages":["a"]}]}""",
@@ -67,6 +66,39 @@ class ShizukuConfigTest {
             assertFalse(raw, config.accessPaused)
             assertTrue(raw, config.packages!!.isEmpty())
         }
+    }
+
+    @Test
+    fun `parseReader migrates v2 config written by r57 and earlier`() {
+        val flags = ConfigManager.FLAG_ALLOWED or NightProtocol.CAP_BINDER_PROXY
+        val json = """
+            {
+              "nightdog_enabled": true,
+              "packages": [
+                {"uid": 10234, "flags": $flags, "packages": ["com.example.app"]},
+                {"uid": 10235, "flags": ${ConfigManager.FLAG_DENIED}, "packages": ["com.example.denied"]},
+                {"flags": 2, "packages": ["no.uid"]}
+              ],
+              "version": 2
+            }
+        """.trimIndent()
+
+        val config = ShizukuConfigManager.parseReader(StringReader(json))
+        assertEquals(ShizukuConfig.LATEST_VERSION, config.version)
+        assertTrue(config.nightDogEnabled)
+        assertFalse(config.accessPaused)
+        assertEquals(2, config.packages!!.size)
+
+        val allowed = config.packages!![0]
+        assertEquals(10234, allowed.uid)
+        assertTrue(allowed.isAllowed())
+        assertEquals(NightProtocol.CAP_BINDER_PROXY, allowed.flags and NightProtocol.MASK_CAPABILITIES)
+        assertEquals(listOf("com.example.app"), allowed.packages)
+        assertTrue(allowed.signers.isNullOrEmpty())
+
+        val denied = config.packages!![1]
+        assertEquals(10235, denied.uid)
+        assertTrue(denied.isDenied())
     }
 
     @Test
