@@ -5,6 +5,9 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -17,14 +20,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -35,6 +43,9 @@ import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -411,7 +422,7 @@ private fun CatalogListScreen(
                     LoadingIndicator(Modifier.size(28.dp))
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        stringResource(R.string.modules_running),
+                        stringResource(R.string.modules_catalog_loading),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -422,11 +433,11 @@ private fun CatalogListScreen(
         if (!isLoading && error != null) {
             item {
                 Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.extraLarge,
                     color = MaterialTheme.colorScheme.errorContainer
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(modifier = Modifier.padding(18.dp)) {
                         Text(
                             error,
                             style = MaterialTheme.typography.bodyMedium,
@@ -440,16 +451,16 @@ private fun CatalogListScreen(
         if (!isLoading && modules.isEmpty() && error == null) {
             item {
                 Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
                     tonalElevation = 1.dp
                 ) {
                     Column(modifier = Modifier.padding(20.dp)) {
                         Text(
                             stringResource(R.string.modules_catalog_empty),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Medium,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -465,7 +476,7 @@ private fun CatalogListScreen(
                 onCardClick = { onCardClick(module) },
                 onInstall = { onInstall(module) },
                 onViewOnGitHub = { onViewOnGitHub(module) },
-                modifier = Modifier.padding(horizontal = 16.dp)
+                modifier = Modifier.animateItem()
             )
         }
     }
@@ -546,6 +557,7 @@ private fun ModuleDetailScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TopAppBar(
                 title = { Text(module.moduleName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -564,7 +576,10 @@ private fun ModuleDetailScreen(
         bottomBar = {
             Surface(tonalElevation = 3.dp) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     if (installed) {
@@ -576,13 +591,13 @@ private fun ModuleDetailScreen(
                             Text(stringResource(R.string.modules_update_action), style = MaterialTheme.typography.labelLarge)
                         }
                     } else {
-                        FilledTonalButton(
+                        Button(
                             modifier = Modifier.weight(1f).height(44.dp),
                             enabled = !installing,
                             onClick = onInstall
                         ) {
                             ShizukuIcon(R.drawable.ic_outline_arrow_upward_24, modifier = Modifier.size(18.dp).padding(end = 6.dp))
-                            Text(stringResource(R.string.modules_install_zip), style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(R.string.modules_catalog_install), style = MaterialTheme.typography.labelLarge)
                         }
                     }
                     OutlinedButton(
@@ -641,63 +656,65 @@ private fun ModuleDetailScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        AssistChip(onClick = {}, label = { Text(module.moduleId) })
                         module.version?.let {
-                            DetailChip(
-                                text = "v$it",
-                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                onColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
+                            AssistChip(onClick = {}, label = { Text("v${it.removePrefix("v")}") })
                         }
-                        DetailChip(
-                            text = "${module.stars}",
-                            icon = {
+                        AssistChip(
+                            onClick = {},
+                            leadingIcon = {
                                 Icon(
                                     Icons.Rounded.Star,
                                     null,
-                                    Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    Modifier.size(16.dp)
                                 )
                             },
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            onColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            label = { Text("${module.stars}") }
                         )
-                        DetailChip(
-                            text = formatCount(module.downloads),
-                            icon = {
+                        AssistChip(
+                            onClick = {},
+                            leadingIcon = {
                                 Icon(
                                     Icons.Rounded.CloudDownload,
                                     null,
-                                    Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    Modifier.size(16.dp)
                                 )
                             },
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            onColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            label = { Text(formatCount(module.downloads)) }
                         )
                         if (module.isOfficial) {
-                            DetailChip(
-                                text = stringResource(R.string.modules_catalog_sort_official),
-                                color = MaterialTheme.colorScheme.tertiaryContainer,
-                                onColor = MaterialTheme.colorScheme.onTertiaryContainer
+                            AssistChip(
+                                onClick = {},
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                ),
+                                label = { Text(stringResource(R.string.modules_catalog_sort_official)) }
                             )
                         }
                         if (isModuleOutdated(module)) {
-                            DetailChip(
-                                text = stringResource(R.string.modules_outdated),
-                                color = MaterialTheme.colorScheme.errorContainer,
-                                onColor = MaterialTheme.colorScheme.onErrorContainer
+                            AssistChip(
+                                onClick = {},
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    labelColor = MaterialTheme.colorScheme.onErrorContainer
+                                ),
+                                label = { Text(stringResource(R.string.modules_outdated)) }
                             )
                         }
                         if (installed) {
-                            DetailChip(
-                                text = stringResource(R.string.modules_enabled),
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                onColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            AssistChip(
+                                onClick = {},
+                                colors = AssistChipDefaults.assistChipColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                label = { Text(stringResource(R.string.modules_enabled)) }
                             )
                         }
                     }
 
-                    module.repoDescription?.let {
+                    (module.description ?: module.repoDescription)?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -746,25 +763,6 @@ private fun ModuleDetailScreen(
     }
 }
 
-@Composable
-private fun DetailChip(
-    text: String,
-    icon: @Composable (() -> Unit)? = null,
-    color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    onColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface
-) {
-    Surface(shape = MaterialTheme.shapes.small, color = color) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            icon?.invoke()
-            Text(text = text, style = MaterialTheme.typography.labelSmall, color = onColor)
-        }
-    }
-}
-
 private const val OUTDATED_THRESHOLD_MS = 90L * 24 * 60 * 60 * 1000
 
 private fun isModuleOutdated(module: DiscoveredModule): Boolean {
@@ -789,7 +787,7 @@ private fun SortChipRow(sortMode: SortMode, onSortChange: (SortMode) -> Unit) {
     val entries = listOf(SortMode.STARS, SortMode.NEWEST, SortMode.OLDEST, SortMode.OFFICIAL)
 
     SingleChoiceSegmentedButtonRow(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
     ) {
         entries.forEachIndexed { index, mode ->
             SegmentedButton(
@@ -813,110 +811,185 @@ private fun CatalogModuleCard(
     onViewOnGitHub: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val containerColor by animateColorAsState(
+        targetValue = if (installed) {
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainer
+        },
+        animationSpec = tween(260),
+        label = "catalog-card-container"
+    )
+
     Surface(
-        modifier = modifier.fillMaxWidth().clickable(onClick = onCardClick),
-        shape = MaterialTheme.shapes.large,
-        color = if (installed) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceContainerLow,
-        tonalElevation = if (installed) 0.dp else 2.dp
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.extraLarge)
+            .clickable(onClick = onCardClick)
+            .animateContentSize(animationSpec = tween(280)),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = containerColor,
+        tonalElevation = 1.dp
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                CatalogAvatar(ownerAvatar = module.ownerAvatar, moduleName = module.moduleName, modifier = Modifier.size(48.dp))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CatalogAvatar(
+                    ownerAvatar = module.ownerAvatar,
+                    moduleName = module.moduleName,
+                    modifier = Modifier.size(48.dp)
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Text(
                         module.moduleName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        module.author ?: module.repoFullName.substringBefore('/'),
-                        style = MaterialTheme.typography.bodySmall,
+                        stringResource(R.string.modules_version_label, module.version ?: "-"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        stringResource(
+                            R.string.modules_author_label,
+                            module.author ?: module.repoFullName.substringBefore('/')
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
+
+            (module.description ?: module.repoDescription)?.let { desc ->
+                if (desc.isNotBlank()) {
+                    Text(
+                        text = desc,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
             androidx.compose.foundation.layout.FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                module.version?.let {
-                    DetailChip(
-                        text = it,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        onColor = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-                DetailChip(
-                    text = "${module.stars}",
-                    icon = {
+                AssistChip(
+                    onClick = onCardClick,
+                    label = { Text(module.moduleId) }
+                )
+                AssistChip(
+                    onClick = onCardClick,
+                    leadingIcon = {
                         Icon(
                             Icons.Rounded.Star,
                             null,
-                            Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            Modifier.size(16.dp)
                         )
                     },
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    onColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    label = { Text("${module.stars}") }
                 )
-                DetailChip(
-                    text = formatCount(module.downloads),
-                    icon = {
+                AssistChip(
+                    onClick = onCardClick,
+                    leadingIcon = {
                         Icon(
                             Icons.Rounded.CloudDownload,
                             null,
-                            Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            Modifier.size(16.dp)
                         )
                     },
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    onColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    label = { Text(formatCount(module.downloads)) }
                 )
                 if (module.isOfficial) {
-                    DetailChip(
-                        text = stringResource(R.string.modules_catalog_sort_official),
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
-                        onColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    AssistChip(
+                        onClick = onCardClick,
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        ),
+                        label = { Text(stringResource(R.string.modules_catalog_sort_official)) }
                     )
                 }
                 if (isModuleOutdated(module)) {
-                    DetailChip(
-                        text = stringResource(R.string.modules_outdated),
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        onColor = MaterialTheme.colorScheme.onErrorContainer
+                    AssistChip(
+                        onClick = onCardClick,
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            labelColor = MaterialTheme.colorScheme.onErrorContainer
+                        ),
+                        label = { Text(stringResource(R.string.modules_outdated)) }
                     )
                 }
                 if (installed) {
-                    DetailChip(
-                        text = stringResource(R.string.modules_enabled),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        onColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    AssistChip(
+                        onClick = onCardClick,
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            labelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        label = { Text(stringResource(R.string.modules_enabled)) }
                     )
                 }
             }
-            module.repoDescription?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+
             AnimatedVisibility(visible = installing, enter = fadeIn(), exit = fadeOut()) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(modifier = Modifier.height(40.dp), enabled = !installing, onClick = onInstall) {
-                    ShizukuIcon(R.drawable.ic_outline_arrow_upward_24, modifier = Modifier.padding(end = 6.dp).size(16.dp))
-                    Text(stringResource(R.string.modules_install_zip))
+
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (installed) {
+                    FilledTonalButton(
+                        modifier = Modifier.widthIn(min = 116.dp),
+                        enabled = !installing,
+                        onClick = onInstall
+                    ) {
+                        ShizukuIcon(
+                            R.drawable.ic_outline_arrow_upward_24,
+                            modifier = Modifier.padding(end = 8.dp).size(18.dp)
+                        )
+                        Text(stringResource(R.string.modules_update_action))
+                    }
+                } else {
+                    Button(
+                        modifier = Modifier.widthIn(min = 116.dp),
+                        enabled = !installing,
+                        onClick = onInstall
+                    ) {
+                        ShizukuIcon(
+                            R.drawable.ic_outline_arrow_upward_24,
+                            modifier = Modifier.padding(end = 8.dp).size(18.dp)
+                        )
+                        Text(stringResource(R.string.modules_catalog_install))
+                    }
                 }
-                OutlinedButton(modifier = Modifier.height(40.dp), onClick = onViewOnGitHub) {
-                    ShizukuIcon(R.drawable.ic_outline_open_in_new_24, modifier = Modifier.padding(end = 6.dp).size(16.dp))
+                OutlinedButton(
+                    modifier = Modifier.widthIn(min = 116.dp),
+                    onClick = onViewOnGitHub
+                ) {
+                    ShizukuIcon(
+                        R.drawable.ic_outline_open_in_new_24,
+                        modifier = Modifier.padding(end = 8.dp).size(18.dp)
+                    )
                     Text("GitHub")
                 }
             }
