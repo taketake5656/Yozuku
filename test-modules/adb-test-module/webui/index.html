@@ -6,6 +6,7 @@
   <title>ADB Test Module</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/beercss@4.0.21/dist/cdn/beer.min.css">
   <script type="module" src="https://cdn.jsdelivr.net/npm/beercss@4.0.21/dist/cdn/beer.min.js"></script>
+  <script src="nightzuku-guard.js"></script>
   <style>
     body {
       margin: 0;
@@ -30,9 +31,10 @@
   <main class="responsive">
     <article class="round large-padding">
       <h5>ADB Test Module</h5>
-      <p>WebUI loaded from the installed module directory. BeerCSS is loaded from HTTPS CDN.</p>
+      <p>WebUI loaded from the installed module directory. Protected by <code>NightzukuGuard</code>.</p>
       <div class="grid">
         <button id="infoBtn" class="border">Module info</button>
+        <button id="verifyBtn" class="border">Verify host</button>
         <button id="testBtn">Test shell bridge</button>
         <button id="advancedBtn" class="border">Test execWithOptions</button>
         <button id="downloadBtn" class="border">Cache BeerCSS CSS</button>
@@ -42,29 +44,36 @@
   </main>
 
   <script>
+    NightzukuGuard.enforce({ minApiVersion: 2 });
+
     const output = document.getElementById('output');
     const print = (value) => {
       output.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
     };
     const call = (fn) => {
       try {
-        if (!window.Shizuku) throw new Error('window.Shizuku interface not found');
-        print(fn());
+        const bridge = window.Nightzuku || window.Shizuku;
+        if (!bridge) throw new Error('window.Nightzuku interface not found');
+        print(fn(bridge));
       } catch (e) {
         print('Exception: ' + e.message);
       }
     };
 
-    document.getElementById('infoBtn').addEventListener('click', () => call(() =>
-      JSON.parse(window.Shizuku.getModuleInfo())
+    document.getElementById('infoBtn').addEventListener('click', () => call((bridge) =>
+      JSON.parse(bridge.getModuleInfo())
     ));
 
-    document.getElementById('testBtn').addEventListener('click', () => call(() =>
-      JSON.parse(window.Shizuku.exec('id; echo MODDIR=$MODDIR; echo MODE=$SHIZUKU_MODULE_MODE'))
+    document.getElementById('verifyBtn').addEventListener('click', () => call((bridge) =>
+      JSON.parse(bridge.verifyHost('manual-ui-check'))
     ));
 
-    document.getElementById('advancedBtn').addEventListener('click', () => call(() =>
-      JSON.parse(window.Shizuku.execWithOptions('cat; pwd; echo FOO=$FOO', JSON.stringify({
+    document.getElementById('testBtn').addEventListener('click', () => call((bridge) =>
+      JSON.parse(bridge.exec('id; echo MODDIR=$MODDIR; echo MODE=$SHIZUKU_MODULE_MODE; echo HOST=$NIGHTZUKU_HOST_PKG'))
+    ));
+
+    document.getElementById('advancedBtn').addEventListener('click', () => call((bridge) =>
+      JSON.parse(bridge.execWithOptions('cat; pwd; echo FOO=$FOO', JSON.stringify({
         timeoutSeconds: 30,
         stdin: 'stdin-ok\\n',
         cwd: 'webui',
@@ -72,8 +81,8 @@
       })))
     ));
 
-    document.getElementById('downloadBtn').addEventListener('click', () => call(() =>
-      JSON.parse(window.Shizuku.download(
+    document.getElementById('downloadBtn').addEventListener('click', () => call((bridge) =>
+      JSON.parse(bridge.download(
         'https://cdn.jsdelivr.net/npm/beercss@4.0.21/dist/cdn/beer.min.css',
         'vendor/beer.min.css'
       ))

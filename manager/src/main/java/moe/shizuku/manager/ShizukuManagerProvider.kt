@@ -8,6 +8,7 @@ import kerneldroid.nightzuku.api.LegacyParcelCodec
 import kerneldroid.nightzuku.api.NightClient
 import kerneldroid.nightzuku.api.NightProtocol
 import moe.shizuku.api.BinderContainer
+import moe.shizuku.manager.module.ModuleRuntimeUtils
 import moe.shizuku.manager.utils.Logger.LOGGER
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuApiConstants.USER_SERVICE_ARG_TOKEN
@@ -18,6 +19,7 @@ class ShizukuManagerProvider : ShizukuProvider() {
 
     companion object {
         private const val METHOD_SEND_USER_SERVICE = "sendUserService"
+        const val METHOD_VERIFY_HOST = "verifyNightzukuHost"
     }
 
     override fun onCreate(): Boolean {
@@ -26,6 +28,24 @@ class ShizukuManagerProvider : ShizukuProvider() {
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        if (method == METHOD_VERIFY_HOST) {
+            val ctx = context ?: return null
+            val signer = ModuleRuntimeUtils.getManagerSignerSha256(ctx)
+            val challenge = arg?.take(256).orEmpty()
+            val moduleId = extras?.getString("moduleId").orEmpty()
+            val token = ModuleRuntimeUtils.computeAttestationToken(moduleId, challenge, signer)
+            return Bundle().apply {
+                putBoolean("genuine", true)
+                putString("hostPackage", ModuleRuntimeUtils.HOST_PACKAGE_ID)
+                putString("hostVersion", BuildConfig.VERSION_NAME)
+                putInt("hostVersionCode", BuildConfig.VERSION_CODE)
+                putInt("modulesApiVersion", ModuleRuntimeUtils.HOST_API_VERSION)
+                putString("binderDescriptor", NightProtocol.DESCRIPTOR)
+                putString("signerSha256", signer)
+                putString("attestationToken", token)
+            }
+        }
+
         if (extras == null) return null
 
         return when (method) {
@@ -59,8 +79,6 @@ class ShizukuManagerProvider : ShizukuProvider() {
             val binder = LegacyParcelCodec.extractBinderFromBundle(extras) ?: return null
 
             val countDownLatch = CountDownLatch(1)
-            // Visibility is guaranteed by CountDownLatch.await()'s happens-before edge,
-            // so no @Volatile is needed here (and it is invalid on a local variable anyway).
             var reply: Bundle? = null
 
             val listener = object : Shizuku.OnBinderReceivedListener {
