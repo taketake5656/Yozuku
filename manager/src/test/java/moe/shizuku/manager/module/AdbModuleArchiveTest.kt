@@ -5,6 +5,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -80,5 +81,47 @@ class AdbModuleArchiveTest {
         assertEquals("v1.4.2", parsed["version"])
         assertEquals("142", parsed["versionCode"])
         assertEquals("true", parsed["usesShellBridge"])
+    }
+
+    @Test
+    fun `verifyModuleHostRequirements enforces Nightzuku runtime and API minimums`() {
+        ModuleRuntimeUtils.verifyModuleHostRequirements(
+            mapOf(
+                "id" to "night_perf",
+                "requireNightzuku" to "true",
+                "minNightzukuApi" to "1",
+                "minNightzukuVersion" to "13"
+            )
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ModuleRuntimeUtils.verifyModuleHostRequirements(
+                mapOf(
+                    "id" to "future_mod",
+                    "minNightzukuApi" to "999"
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `buildHostAttestationEnv and writeHostAttestationFile produce deterministic verifiable tokens`() {
+        val modDir = tempFolder.newFolder("mod_test")
+        val env = ModuleRuntimeUtils.buildHostAttestationEnv("mod_test")
+
+        assertEquals("kerneldroid.nightzuku", env["NIGHTZUKU_HOST_PACKAGE"])
+        assertEquals("kerneldroid.nightzuku.INightService", env["NIGHTZUKU_WIRE_PROTOCOL"])
+        assertTrue(env["NIGHTZUKU_HOST_TOKEN"]!!.length == 64)
+
+        val response = ModuleRuntimeUtils.computeChallengeToken("mod_test", "nonce-123")
+        val otherResponse = ModuleRuntimeUtils.computeChallengeToken("mod_test", "nonce-456")
+        assertEquals(64, response.length)
+        assertFalse(response == otherResponse)
+
+        val envFile = ModuleRuntimeUtils.writeHostAttestationFile(modDir, "mod_test")
+        assertTrue(envFile.isFile)
+        val envContent = envFile.readText()
+        assertTrue(envContent.contains("NIGHTZUKU_HOST_PACKAGE='kerneldroid.nightzuku'"))
+        assertTrue(envContent.contains("NIGHTZUKU_HOST_TOKEN='${env["NIGHTZUKU_HOST_TOKEN"]}'"))
     }
 }
