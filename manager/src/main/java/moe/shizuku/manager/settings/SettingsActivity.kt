@@ -51,8 +51,8 @@ import moe.shizuku.manager.app.ThemeHelper.KEY_USE_SYSTEM_COLOR
 import moe.shizuku.manager.ktx.isComponentEnabled
 import moe.shizuku.manager.ktx.setComponentEnabled
 import moe.shizuku.manager.module.ModuleSettings
+import moe.shizuku.manager.module.update.ModuleUpdateScheduler
 import moe.shizuku.manager.module.update.UpdateSettingsScreen
-import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.receiver.BootCompleteReceiver
 import moe.shizuku.manager.ui.compose.SettingsItem
 import moe.shizuku.manager.ui.compose.SettingsSection
@@ -95,6 +95,28 @@ private enum class SettingsCategory(
     )
 }
 
+private sealed interface PhoneSettingsRoute {
+    val depth: Int
+
+    data object Root : PhoneSettingsRoute {
+        override val depth: Int = 0
+    }
+
+    data class Category(val category: SettingsCategory) : PhoneSettingsRoute {
+        override val depth: Int = 1
+    }
+
+    data object UpdateSettings : PhoneSettingsRoute {
+        override val depth: Int = 2
+    }
+}
+
+private enum class SecondarySubscreen(val depth: Int) {
+    ROOT(0),
+    TOKEN_SETTINGS(1),
+    LAB_FEATURES(1)
+}
+
 @Composable
 private fun settingsCategoryAccent(index: Int): Pair<Color, Color> {
     val scheme = MaterialTheme.colorScheme
@@ -133,10 +155,8 @@ class SettingsActivity : AppActivity() {
             var showNightDialog by remember { mutableStateOf(false) }
             var showModuleModeDialog by remember { mutableStateOf(false) }
             var showCustomPermissionsDialog by remember { mutableStateOf(false) }
-            var showTokenSettings by remember { mutableStateOf(false) }
-            var showUpdateSettings by remember { mutableStateOf(false) }
-            var showLabFeatures by remember { mutableStateOf(false) }
-            var openCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+            var phoneRoute by remember { mutableStateOf<PhoneSettingsRoute>(PhoneSettingsRoute.Root) }
+            var secondarySubscreen by remember { mutableStateOf(SecondarySubscreen.ROOT) }
 
             var moduleAccessMode by remember {
                 mutableStateOf(ModuleSettings.getAccessMode())
@@ -180,197 +200,258 @@ class SettingsActivity : AppActivity() {
             val isWatch = moe.shizuku.manager.utils.EnvironmentUtils.isWatch(this@SettingsActivity)
             val isTv = moe.shizuku.manager.utils.EnvironmentUtils.isTV(this@SettingsActivity)
 
+            fun refreshModuleToggles() {
+                allowBackgroundActions = ModuleSettings.allowBackgroundActions()
+                backgroundCheckEnabled = ModuleSettings.isBackgroundCheckEnabled()
+            }
+
             androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
-                if (showUpdateSettings) {
-                    BackHandler {
-                        allowBackgroundActions = ModuleSettings.allowBackgroundActions()
-                        backgroundCheckEnabled = ModuleSettings.isBackgroundCheckEnabled()
-                        showUpdateSettings = false
+                if (isWatch) {
+                    BackHandler(enabled = secondarySubscreen != SecondarySubscreen.ROOT) {
+                        refreshModuleToggles()
+                        secondarySubscreen = SecondarySubscreen.ROOT
                     }
-                    UpdateSettingsScreen(
-                        onNavigateUp = {
-                            allowBackgroundActions = ModuleSettings.allowBackgroundActions()
-                            backgroundCheckEnabled = ModuleSettings.isBackgroundCheckEnabled()
-                            showUpdateSettings = false
-                        }
-                    )
-                } else if (showTokenSettings) {
-                    if (isWatch) {
-                        moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                            moe.shizuku.manager.module.catalog.WearTokenSettingsScreen(
-                                onBack = { showTokenSettings = false }
-                            )
-                        }
-                    } else if (isTv) {
-                        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-                            TvTokenSettingsScreen(
-                                onNavigateUp = { showTokenSettings = false }
-                            )
-                        }
-                    }
-                } else if (showLabFeatures) {
-                    if (isTv) {
-                        moe.shizuku.manager.ui.compose.TvShizukuTheme {
-                            TvLabMenuScreen(
-                                onNavigateUp = {
-                                    allowBackgroundActions = ModuleSettings.allowBackgroundActions()
-                                    backgroundCheckEnabled = ModuleSettings.isBackgroundCheckEnabled()
-                                    showLabFeatures = false
-                                }
-                            )
-                        }
-                    } else {
-                        startActivity(android.content.Intent(this@SettingsActivity, LabFeaturesActivity::class.java))
-                        showLabFeatures = false
-                    }
-                } else if (isWatch) {
                     moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                        WearSettingsScreen(
-                            startOnBoot = startOnBoot,
-                            onStartOnBootChange = { enabled ->
-                                packageManager.setComponentEnabled(componentName, enabled)
-                                startOnBoot = packageManager.isComponentEnabled(componentName)
-                            },
-                            nightModeSummary = nightSummary,
-                            onNightModeClick = { showNightDialog = true },
-                            blackNightTheme = blackNightTheme,
-                            onBlackNightThemeChange = { enabled ->
-                                prefs.edit().putBoolean(KEY_BLACK_NIGHT_THEME, enabled).apply()
-                                blackNightTheme = enabled
-                                if (rikka.core.util.ResourceUtils.isNightMode(resources.configuration)) {
-                                    recreateTick++
+                        AnimatedContent(
+                            targetState = secondarySubscreen,
+                            transitionSpec = {
+                                if (targetState.depth >= initialState.depth) {
+                                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
+                                } else {
+                                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
                                 }
                             },
-                            useSystemColor = useSystemColor,
-                            onUseSystemColorChange = { enabled ->
-                                prefs.edit().putBoolean(KEY_USE_SYSTEM_COLOR, enabled).apply()
-                                useSystemColor = enabled
-                                recreateTick++
-                            },
-                            onLabFeaturesClick = {
-                                startActivity(android.content.Intent(this@SettingsActivity, LabFeaturesActivity::class.java))
-                            },
-                            moduleAccessMode = moduleAccessMode,
-                            onModuleAccessModeClick = { showModuleModeDialog = true },
-                            onCustomPermissionsClick = { showCustomPermissionsDialog = true },
-                            allowBackgroundActions = allowBackgroundActions,
-                            onAllowBackgroundActionsChange = { enabled ->
-                                ModuleSettings.setAllowBackgroundActions(enabled)
-                                allowBackgroundActions = enabled
-                            },
-                            backgroundCheckEnabled = backgroundCheckEnabled,
-                            onBackgroundCheckEnabledChange = { enabled ->
-                                ModuleSettings.setBackgroundCheckEnabled(enabled)
-                                backgroundCheckEnabled = enabled
-                                if (enabled) {
-                                    NightDogClient.ensurePeriodicLoop()
+                            label = "wear-settings-subscreen"
+                        ) { subscreen ->
+                            when (subscreen) {
+                                SecondarySubscreen.TOKEN_SETTINGS -> {
+                                    moe.shizuku.manager.module.catalog.WearTokenSettingsScreen(
+                                        onBack = { secondarySubscreen = SecondarySubscreen.ROOT }
+                                    )
                                 }
-                            },
-                            onGitHubTokenClick = { showTokenSettings = true },
-                            showNightDialog = false,
-                            nightLabels = nightLabels,
-                            nightValues = nightValues,
-                            currentNightMode = nightMode,
-                            onNightModeSelect = { value ->
-                                prefs.edit().putInt(NIGHT_MODE, value).apply()
-                                nightMode = value
-                                AppCompatDelegate.setDefaultNightMode(value)
-                                showNightDialog = false
-                                recreate()
-                            },
-                            onNightDialogDismiss = { showNightDialog = false }
-                        )
+                                else -> {
+                                    WearSettingsScreen(
+                                        startOnBoot = startOnBoot,
+                                        onStartOnBootChange = { enabled ->
+                                            packageManager.setComponentEnabled(componentName, enabled)
+                                            startOnBoot = packageManager.isComponentEnabled(componentName)
+                                        },
+                                        nightModeSummary = nightSummary,
+                                        onNightModeClick = { showNightDialog = true },
+                                        blackNightTheme = blackNightTheme,
+                                        onBlackNightThemeChange = { enabled ->
+                                            prefs.edit().putBoolean(KEY_BLACK_NIGHT_THEME, enabled).apply()
+                                            blackNightTheme = enabled
+                                            if (rikka.core.util.ResourceUtils.isNightMode(resources.configuration)) {
+                                                recreateTick++
+                                            }
+                                        },
+                                        useSystemColor = useSystemColor,
+                                        onUseSystemColorChange = { enabled ->
+                                            prefs.edit().putBoolean(KEY_USE_SYSTEM_COLOR, enabled).apply()
+                                            useSystemColor = enabled
+                                            recreateTick++
+                                        },
+                                        onLabFeaturesClick = {
+                                            startActivity(android.content.Intent(this@SettingsActivity, LabFeaturesActivity::class.java))
+                                        },
+                                        moduleAccessMode = moduleAccessMode,
+                                        onModuleAccessModeClick = { showModuleModeDialog = true },
+                                        onCustomPermissionsClick = { showCustomPermissionsDialog = true },
+                                        allowBackgroundActions = allowBackgroundActions,
+                                        onAllowBackgroundActionsChange = { enabled ->
+                                            ModuleSettings.setAllowBackgroundActions(enabled)
+                                            allowBackgroundActions = enabled
+                                        },
+                                        backgroundCheckEnabled = backgroundCheckEnabled,
+                                        onBackgroundCheckEnabledChange = { enabled ->
+                                            ModuleSettings.setBackgroundCheckEnabled(enabled)
+                                            backgroundCheckEnabled = enabled
+                                            ModuleUpdateScheduler.syncSchedule(this@SettingsActivity)
+                                        },
+                                        onGitHubTokenClick = { secondarySubscreen = SecondarySubscreen.TOKEN_SETTINGS },
+                                        showNightDialog = false,
+                                        nightLabels = nightLabels,
+                                        nightValues = nightValues,
+                                        currentNightMode = nightMode,
+                                        onNightModeSelect = { value ->
+                                            prefs.edit().putInt(NIGHT_MODE, value).apply()
+                                            nightMode = value
+                                            AppCompatDelegate.setDefaultNightMode(value)
+                                            showNightDialog = false
+                                            recreate()
+                                        },
+                                        onNightDialogDismiss = { showNightDialog = false }
+                                    )
+                                }
+                            }
+                        }
                     }
                 } else if (isTv) {
+                    BackHandler(enabled = secondarySubscreen != SecondarySubscreen.ROOT) {
+                        refreshModuleToggles()
+                        secondarySubscreen = SecondarySubscreen.ROOT
+                    }
                     moe.shizuku.manager.ui.compose.TvShizukuTheme {
-                        TvSettingsScreen(
-                            onNavigateUp = { finish() },
-                            startOnBoot = startOnBoot,
-                            onStartOnBootChange = { enabled ->
-                                packageManager.setComponentEnabled(componentName, enabled)
-                                startOnBoot = packageManager.isComponentEnabled(componentName)
-                            },
-                            languageSummary = languageSummary,
-                            onLanguageClick = { showLanguageDialog = true },
-                            nightSummary = nightSummary,
-                            onNightModeClick = { showNightDialog = true },
-                            blackNightTheme = blackNightTheme,
-                            onBlackNightThemeChange = { enabled ->
-                                prefs.edit().putBoolean(KEY_BLACK_NIGHT_THEME, enabled).apply()
-                                blackNightTheme = enabled
-                                if (rikka.core.util.ResourceUtils.isNightMode(resources.configuration)) {
-                                    recreateTick++
+                        AnimatedContent(
+                            targetState = secondarySubscreen,
+                            transitionSpec = {
+                                if (targetState.depth >= initialState.depth) {
+                                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
+                                } else {
+                                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
                                 }
                             },
-                            useSystemColor = useSystemColor,
-                            onUseSystemColorChange = { enabled ->
-                                prefs.edit().putBoolean(KEY_USE_SYSTEM_COLOR, enabled).apply()
-                                useSystemColor = enabled
-                                recreateTick++
-                            },
-                            moduleAccessMode = moduleAccessMode,
-                            onModuleAccessModeClick = { showModuleModeDialog = true },
-                            allowBackgroundActions = allowBackgroundActions,
-                            onAllowBackgroundActionsChange = { enabled ->
-                                ModuleSettings.setAllowBackgroundActions(enabled)
-                                allowBackgroundActions = enabled
-                            },
-                            backgroundCheckEnabled = backgroundCheckEnabled,
-                            onBackgroundCheckEnabledChange = { enabled ->
-                                ModuleSettings.setBackgroundCheckEnabled(enabled)
-                                backgroundCheckEnabled = enabled
-                                if (enabled) {
-                                    NightDogClient.ensurePeriodicLoop()
+                            label = "tv-settings-subscreen"
+                        ) { subscreen ->
+                            when (subscreen) {
+                                SecondarySubscreen.TOKEN_SETTINGS -> {
+                                    TvTokenSettingsScreen(
+                                        onNavigateUp = { secondarySubscreen = SecondarySubscreen.ROOT }
+                                    )
                                 }
-                            },
-                            recommandWebUi = recommandWebUi,
-                            onRecommandWebUiChange = { enabled ->
-                                ModuleSettings.setRecommandForWebUi(enabled)
-                                recommandWebUi = enabled
-                            },
-                            recommandAction = recommandAction,
-                            onRecommandActionChange = { enabled ->
-                                ModuleSettings.setRecommandForAction(enabled)
-                                recommandAction = enabled
-                            },
-                            onLabFeaturesClick = {
-                                showLabFeatures = true
-                            },
-                            onGitHubTokenClick = { showTokenSettings = true }
-                        )
+                                SecondarySubscreen.LAB_FEATURES -> {
+                                    TvLabMenuScreen(
+                                        onNavigateUp = {
+                                            refreshModuleToggles()
+                                            secondarySubscreen = SecondarySubscreen.ROOT
+                                        }
+                                    )
+                                }
+                                else -> {
+                                    TvSettingsScreen(
+                                        onNavigateUp = { finish() },
+                                        startOnBoot = startOnBoot,
+                                        onStartOnBootChange = { enabled ->
+                                            packageManager.setComponentEnabled(componentName, enabled)
+                                            startOnBoot = packageManager.isComponentEnabled(componentName)
+                                        },
+                                        languageSummary = languageSummary,
+                                        onLanguageClick = { showLanguageDialog = true },
+                                        nightSummary = nightSummary,
+                                        onNightModeClick = { showNightDialog = true },
+                                        blackNightTheme = blackNightTheme,
+                                        onBlackNightThemeChange = { enabled ->
+                                            prefs.edit().putBoolean(KEY_BLACK_NIGHT_THEME, enabled).apply()
+                                            blackNightTheme = enabled
+                                            if (rikka.core.util.ResourceUtils.isNightMode(resources.configuration)) {
+                                                recreateTick++
+                                            }
+                                        },
+                                        useSystemColor = useSystemColor,
+                                        onUseSystemColorChange = { enabled ->
+                                            prefs.edit().putBoolean(KEY_USE_SYSTEM_COLOR, enabled).apply()
+                                            useSystemColor = enabled
+                                            recreateTick++
+                                        },
+                                        moduleAccessMode = moduleAccessMode,
+                                        onModuleAccessModeClick = { showModuleModeDialog = true },
+                                        allowBackgroundActions = allowBackgroundActions,
+                                        onAllowBackgroundActionsChange = { enabled ->
+                                            ModuleSettings.setAllowBackgroundActions(enabled)
+                                            allowBackgroundActions = enabled
+                                        },
+                                        backgroundCheckEnabled = backgroundCheckEnabled,
+                                        onBackgroundCheckEnabledChange = { enabled ->
+                                            ModuleSettings.setBackgroundCheckEnabled(enabled)
+                                            backgroundCheckEnabled = enabled
+                                            ModuleUpdateScheduler.syncSchedule(this@SettingsActivity)
+                                        },
+                                        recommandWebUi = recommandWebUi,
+                                        onRecommandWebUiChange = { enabled ->
+                                            ModuleSettings.setRecommandForWebUi(enabled)
+                                            recommandWebUi = enabled
+                                        },
+                                        recommandAction = recommandAction,
+                                        onRecommandActionChange = { enabled ->
+                                            ModuleSettings.setRecommandForAction(enabled)
+                                            recommandAction = enabled
+                                        },
+                                        onLabFeaturesClick = {
+                                            secondarySubscreen = SecondarySubscreen.LAB_FEATURES
+                                        },
+                                        onGitHubTokenClick = { secondarySubscreen = SecondarySubscreen.TOKEN_SETTINGS }
+                                    )
+                                }
+                            }
+                        }
                     }
                 } else {
                     ShizukuExpressiveTheme {
-                        val activeCategory = openCategory
-                        BackHandler(enabled = activeCategory != null) { openCategory = null }
+                        BackHandler(enabled = phoneRoute != PhoneSettingsRoute.Root) {
+                            refreshModuleToggles()
+                            phoneRoute = when (phoneRoute) {
+                                is PhoneSettingsRoute.UpdateSettings -> PhoneSettingsRoute.Category(SettingsCategory.MODULES)
+                                else -> PhoneSettingsRoute.Root
+                            }
+                        }
 
                         AnimatedContent(
-                            targetState = activeCategory,
+                            targetState = phoneRoute,
                             transitionSpec = {
-                                if (targetState != null) {
+                                if (targetState.depth >= initialState.depth) {
                                     slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
                                 } else {
                                     slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
                                 }
                             },
                             label = "settings-category"
-                        ) { activeCategory ->
-                            if (activeCategory == null) {
-                                ShizukuLazyScaffold(
-                                    title = stringResource(R.string.settings_title),
-                                    onNavigateUp = { finish() }
-                                ) {
-                                    item {
-                                        val categoryCount = SettingsCategory.entries.size + 1
-                                        Column(
-                                            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
-                                        ) {
-                                            SettingsCategory.entries.forEachIndexed { index, category ->
-                                                val (container, onContainer) = settingsCategoryAccent(index)
+                        ) { route ->
+                            when (route) {
+                                is PhoneSettingsRoute.UpdateSettings -> {
+                                    UpdateSettingsScreen(
+                                        onNavigateUp = {
+                                            refreshModuleToggles()
+                                            phoneRoute = PhoneSettingsRoute.Category(SettingsCategory.MODULES)
+                                        }
+                                    )
+                                }
+
+                                is PhoneSettingsRoute.Root -> {
+                                    ShizukuLazyScaffold(
+                                        title = stringResource(R.string.settings_title),
+                                        onNavigateUp = { finish() }
+                                    ) {
+                                        item {
+                                            val categoryCount = SettingsCategory.entries.size + 1
+                                            Column(
+                                                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)
+                                            ) {
+                                                SettingsCategory.entries.forEachIndexed { index, category ->
+                                                    val (container, onContainer) = settingsCategoryAccent(index)
+                                                    SegmentedListItem(
+                                                        onClick = { phoneRoute = PhoneSettingsRoute.Category(category) },
+                                                        shapes = ListItemDefaults.segmentedShapes(
+                                                            index = index,
+                                                            count = categoryCount
+                                                        ),
+                                                        colors = ListItemDefaults.segmentedColors(
+                                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                                                        ),
+                                                        contentPadding = PaddingValues(vertical = 14.dp, horizontal = 14.dp),
+                                                        leadingContent = {
+                                                            ShizukuIcon(
+                                                                icon = category.icon,
+                                                                contentDescription = null,
+                                                                tint = onContainer,
+                                                                modifier = Modifier
+                                                                    .background(container, CircleShape)
+                                                                    .padding(10.dp)
+                                                            )
+                                                        },
+                                                        supportingContent = { Text(stringResource(category.subtitle)) }
+                                                    ) {
+                                                        Text(stringResource(category.title))
+                                                    }
+                                                }
+                                                val labIndex = SettingsCategory.entries.size
+                                                val (labContainer, labOnContainer) = settingsCategoryAccent(labIndex)
                                                 SegmentedListItem(
-                                                    onClick = { openCategory = category },
+                                                    onClick = {
+                                                        startActivity(android.content.Intent(this@SettingsActivity, LabFeaturesActivity::class.java))
+                                                    },
                                                     shapes = ListItemDefaults.segmentedShapes(
-                                                        index = index,
+                                                        index = labIndex,
                                                         count = categoryCount
                                                     ),
                                                     colors = ListItemDefaults.segmentedColors(
@@ -379,251 +460,211 @@ class SettingsActivity : AppActivity() {
                                                     contentPadding = PaddingValues(vertical = 14.dp, horizontal = 14.dp),
                                                     leadingContent = {
                                                         ShizukuIcon(
-                                                            icon = category.icon,
+                                                            icon = R.drawable.ic_code_24dp,
                                                             contentDescription = null,
-                                                            tint = onContainer,
+                                                            tint = labOnContainer,
                                                             modifier = Modifier
-                                                                .background(container, CircleShape)
+                                                                .background(labContainer, CircleShape)
                                                                 .padding(10.dp)
                                                         )
                                                     },
-                                                    supportingContent = { Text(stringResource(category.subtitle)) }
+                                                    supportingContent = { Text(stringResource(R.string.lab_features_summary)) }
                                                 ) {
-                                                    Text(stringResource(category.title))
+                                                    Text(stringResource(R.string.lab_features_title))
                                                 }
-                                            }
-                                            val labIndex = SettingsCategory.entries.size
-                                            val (labContainer, labOnContainer) = settingsCategoryAccent(labIndex)
-                                            SegmentedListItem(
-                                                onClick = {
-                                                    startActivity(android.content.Intent(this@SettingsActivity, LabFeaturesActivity::class.java))
-                                                },
-                                                shapes = ListItemDefaults.segmentedShapes(
-                                                    index = labIndex,
-                                                    count = categoryCount
-                                                ),
-                                                colors = ListItemDefaults.segmentedColors(
-                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                                                ),
-                                                contentPadding = PaddingValues(vertical = 14.dp, horizontal = 14.dp),
-                                                leadingContent = {
-                                                    ShizukuIcon(
-                                                        icon = R.drawable.ic_code_24dp,
-                                                        contentDescription = null,
-                                                        tint = labOnContainer,
-                                                        modifier = Modifier
-                                                            .background(labContainer, CircleShape)
-                                                            .padding(10.dp)
-                                                    )
-                                                },
-                                                supportingContent = { Text(stringResource(R.string.lab_features_summary)) }
-                                            ) {
-                                                Text(stringResource(R.string.lab_features_title))
                                             }
                                         }
                                     }
                                 }
-                            } else {
-                                ShizukuLazyScaffold(
-                                    title = stringResource(activeCategory.title),
-                                    onNavigateUp = { openCategory = null }
-                                ) {
-                                    when (activeCategory) {
-                                        SettingsCategory.STARTUP -> item {
-                                            SettingsSection(stringResource(R.string.settings_startup)) {
-                                                SettingsSwitchItem(
-                                                    index = 0,
-                                                    count = 1,
-                                                    icon = R.drawable.ic_server_restart,
-                                                    title = stringResource(R.string.settings_start_on_boot),
-                                                    summary = stringResource(R.string.settings_start_on_boot_summary),
-                                                    checked = startOnBoot,
-                                                    onCheckedChange = { enabled ->
-                                                        packageManager.setComponentEnabled(componentName, enabled)
-                                                        startOnBoot = packageManager.isComponentEnabled(componentName)
-                                                    }
-                                                )
-                                            }
-                                        }
 
-                                        SettingsCategory.APPEARANCE -> {
-                                            val showBlackNightTheme = nightMode != AppCompatDelegate.MODE_NIGHT_NO
-                                            val showSystemColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                                            val itemCount = 1 +
-                                                (if (showBlackNightTheme) 1 else 0) +
-                                                (if (showSystemColor) 1 else 0)
-                                            item {
-                                                SettingsSection(stringResource(R.string.settings_user_interface)) {
-                                                    SettingsItem(
+                                is PhoneSettingsRoute.Category -> {
+                                    val activeCategory = route.category
+                                    ShizukuLazyScaffold(
+                                        title = stringResource(activeCategory.title),
+                                        onNavigateUp = { phoneRoute = PhoneSettingsRoute.Root }
+                                    ) {
+                                        when (activeCategory) {
+                                            SettingsCategory.STARTUP -> item {
+                                                SettingsSection(stringResource(R.string.settings_startup)) {
+                                                    SettingsSwitchItem(
                                                         index = 0,
-                                                        count = itemCount,
-                                                        icon = R.drawable.ic_outline_dark_mode_24,
-                                                        title = stringResource(rikka.core.R.string.dark_theme),
-                                                        summary = nightSummary,
-                                                        onClick = { showNightDialog = true }
-                                                    )
-                                                    if (showBlackNightTheme) {
-                                                        SettingsSwitchItem(
-                                                            index = 1,
-                                                            count = itemCount,
-                                                            icon = R.drawable.ic_outline_dark_mode_24,
-                                                            title = stringResource(R.string.settings_black_night_theme),
-                                                            summary = stringResource(R.string.settings_black_night_theme_summary),
-                                                            checked = blackNightTheme,
-                                                            onCheckedChange = { enabled ->
-                                                                prefs.edit().putBoolean(KEY_BLACK_NIGHT_THEME, enabled).apply()
-                                                                blackNightTheme = enabled
-                                                                if (ResourceUtils.isNightMode(resources.configuration)) {
-                                                                    recreateTick++
-                                                                }
-                                                            }
-                                                        )
-                                                    }
-                                                    if (showSystemColor) {
-                                                        SettingsSwitchItem(
-                                                            index = if (showBlackNightTheme) 2 else 1,
-                                                            count = itemCount,
-                                                            icon = R.drawable.ic_settings_outline_24dp,
-                                                            title = stringResource(R.string.settings_use_system_color),
-                                                            checked = useSystemColor,
-                                                            onCheckedChange = { enabled ->
-                                                                prefs.edit().putBoolean(KEY_USE_SYSTEM_COLOR, enabled).apply()
-                                                                useSystemColor = enabled
-                                                                recreateTick++
-                                                            }
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        SettingsCategory.LANGUAGE -> {
-                                            val showContributors = contributors.isNotBlank()
-                                            val itemCount = 2 + (if (showContributors) 1 else 0)
-                                            item {
-                                                SettingsSection(stringResource(R.string.settings_language)) {
-                                                    SettingsItem(
-                                                        index = 0,
-                                                        count = itemCount,
-                                                        icon = R.drawable.ic_outline_translate_24,
-                                                        title = stringResource(R.string.settings_language),
-                                                        summary = languageSummary,
-                                                        onClick = { showLanguageDialog = true }
-                                                    )
-                                                    if (showContributors) {
-                                                        SettingsItem(
-                                                            index = 1,
-                                                            count = itemCount,
-                                                            icon = R.drawable.ic_outline_info_24,
-                                                            title = stringResource(R.string.settings_translation_contributors),
-                                                            summary = contributors,
-                                                            showChevron = false,
-                                                            onClick = null
-                                                        )
-                                                    }
-                                                    SettingsItem(
-                                                        index = if (showContributors) 2 else 1,
-                                                        count = itemCount,
-                                                        icon = R.drawable.ic_baseline_link_24,
-                                                        title = stringResource(R.string.settings_translation),
-                                                        summary = stringResource(
-                                                            R.string.settings_translation_summary,
-                                                            stringResource(R.string.app_name)
-                                                        ),
-                                                        onClick = {
-                                                            CustomTabsHelper.launchUrlOrCopy(this@SettingsActivity, getString(R.string.translation_url))
+                                                        count = 1,
+                                                        icon = R.drawable.ic_server_restart,
+                                                        title = stringResource(R.string.settings_start_on_boot),
+                                                        summary = stringResource(R.string.settings_start_on_boot_summary),
+                                                        checked = startOnBoot,
+                                                        onCheckedChange = { enabled ->
+                                                            packageManager.setComponentEnabled(componentName, enabled)
+                                                            startOnBoot = packageManager.isComponentEnabled(componentName)
                                                         }
                                                     )
                                                 }
                                             }
-                                        }
 
-                                        SettingsCategory.MODULES -> {
-                                            val showCustomPermissions = moduleAccessMode == ModuleSettings.AccessMode.CUSTOM
-                                            val accessItemCount = 4 + (if (showCustomPermissions) 1 else 0)
-                                            item {
-                                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    SettingsSection(stringResource(R.string.modules_settings_title)) {
-                                                        var idx = 0
+                                            SettingsCategory.APPEARANCE -> {
+                                                val showBlackNightTheme = nightMode != AppCompatDelegate.MODE_NIGHT_NO
+                                                val showSystemColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                                                val itemCount = 1 +
+                                                    (if (showBlackNightTheme) 1 else 0) +
+                                                    (if (showSystemColor) 1 else 0)
+                                                item {
+                                                    SettingsSection(stringResource(R.string.settings_user_interface)) {
                                                         SettingsItem(
-                                                            index = idx++,
-                                                            count = accessItemCount,
-                                                            icon = R.drawable.ic_settings_outline_24dp,
-                                                            title = stringResource(R.string.modules_access_mode),
-                                                            summary = stringResource(moduleAccessMode.labelRes),
-                                                            onClick = { showModuleModeDialog = true }
+                                                            index = 0,
+                                                            count = itemCount,
+                                                            icon = R.drawable.ic_outline_dark_mode_24,
+                                                            title = stringResource(rikka.core.R.string.dark_theme),
+                                                            summary = nightSummary,
+                                                            onClick = { showNightDialog = true }
                                                         )
-                                                        if (showCustomPermissions) {
+                                                        if (showBlackNightTheme) {
+                                                            SettingsSwitchItem(
+                                                                index = 1,
+                                                                count = itemCount,
+                                                                icon = R.drawable.ic_outline_dark_mode_24,
+                                                                title = stringResource(R.string.settings_black_night_theme),
+                                                                summary = stringResource(R.string.settings_black_night_theme_summary),
+                                                                checked = blackNightTheme,
+                                                                onCheckedChange = { enabled ->
+                                                                    prefs.edit().putBoolean(KEY_BLACK_NIGHT_THEME, enabled).apply()
+                                                                    blackNightTheme = enabled
+                                                                    if (ResourceUtils.isNightMode(resources.configuration)) {
+                                                                        recreateTick++
+                                                                    }
+                                                                }
+                                                            )
+                                                        }
+                                                        if (showSystemColor) {
+                                                            SettingsSwitchItem(
+                                                                index = if (showBlackNightTheme) 2 else 1,
+                                                                count = itemCount,
+                                                                icon = R.drawable.ic_settings_outline_24dp,
+                                                                title = stringResource(R.string.settings_use_system_color),
+                                                                checked = useSystemColor,
+                                                                onCheckedChange = { enabled ->
+                                                                    prefs.edit().putBoolean(KEY_USE_SYSTEM_COLOR, enabled).apply()
+                                                                    useSystemColor = enabled
+                                                                    recreateTick++
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            SettingsCategory.LANGUAGE -> {
+                                                val showContributors = contributors.isNotBlank()
+                                                val itemCount = 2 + (if (showContributors) 1 else 0)
+                                                item {
+                                                    SettingsSection(stringResource(R.string.settings_language)) {
+                                                        SettingsItem(
+                                                            index = 0,
+                                                            count = itemCount,
+                                                            icon = R.drawable.ic_outline_translate_24,
+                                                            title = stringResource(R.string.settings_language),
+                                                            summary = languageSummary,
+                                                            onClick = { showLanguageDialog = true }
+                                                        )
+                                                        if (showContributors) {
+                                                            SettingsItem(
+                                                                index = 1,
+                                                                count = itemCount,
+                                                                icon = R.drawable.ic_outline_info_24,
+                                                                title = stringResource(R.string.settings_translation_contributors),
+                                                                summary = contributors,
+                                                                showChevron = false,
+                                                                onClick = null
+                                                            )
+                                                        }
+                                                        SettingsItem(
+                                                            index = if (showContributors) 2 else 1,
+                                                            count = itemCount,
+                                                            icon = R.drawable.ic_baseline_link_24,
+                                                            title = stringResource(R.string.settings_translation),
+                                                            summary = stringResource(
+                                                                R.string.settings_translation_summary,
+                                                                stringResource(R.string.app_name)
+                                                            ),
+                                                            onClick = {
+                                                                CustomTabsHelper.launchUrlOrCopy(this@SettingsActivity, getString(R.string.translation_url))
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            SettingsCategory.MODULES -> {
+                                                val showCustomPermissions = moduleAccessMode == ModuleSettings.AccessMode.CUSTOM
+                                                val accessItemCount = 3 + (if (showCustomPermissions) 1 else 0)
+                                                item {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                        SettingsSection(stringResource(R.string.modules_settings_title)) {
+                                                            var idx = 0
                                                             SettingsItem(
                                                                 index = idx++,
                                                                 count = accessItemCount,
-                                                                icon = R.drawable.ic_add_24,
-                                                                title = stringResource(R.string.modules_custom_permissions),
-                                                                summary = stringResource(R.string.modules_custom_permissions_summary),
-                                                                onClick = { showCustomPermissionsDialog = true }
+                                                                icon = R.drawable.ic_settings_outline_24dp,
+                                                                title = stringResource(R.string.modules_access_mode),
+                                                                summary = stringResource(moduleAccessMode.labelRes),
+                                                                onClick = { showModuleModeDialog = true }
+                                                            )
+                                                            if (showCustomPermissions) {
+                                                                SettingsItem(
+                                                                    index = idx++,
+                                                                    count = accessItemCount,
+                                                                    icon = R.drawable.ic_add_24,
+                                                                    title = stringResource(R.string.modules_custom_permissions),
+                                                                    summary = stringResource(R.string.modules_custom_permissions_summary),
+                                                                    onClick = { showCustomPermissionsDialog = true }
+                                                                )
+                                                            }
+                                                            SettingsSwitchItem(
+                                                                index = idx++,
+                                                                count = accessItemCount,
+                                                                icon = R.drawable.ic_terminal_24,
+                                                                title = stringResource(R.string.modules_background_actions),
+                                                                summary = stringResource(R.string.modules_background_actions_summary),
+                                                                checked = allowBackgroundActions,
+                                                                onCheckedChange = { enabled ->
+                                                                    ModuleSettings.setAllowBackgroundActions(enabled)
+                                                                    allowBackgroundActions = enabled
+                                                                }
+                                                            )
+                                                            SettingsItem(
+                                                                index = idx,
+                                                                count = accessItemCount,
+                                                                icon = R.drawable.ic_outline_notifications_active_24,
+                                                                title = stringResource(R.string.update_settings_title),
+                                                                summary = stringResource(R.string.update_settings_entry_summary),
+                                                                onClick = { phoneRoute = PhoneSettingsRoute.UpdateSettings }
                                                             )
                                                         }
-                                                        SettingsSwitchItem(
-                                                            index = idx++,
-                                                            count = accessItemCount,
-                                                            icon = R.drawable.ic_terminal_24,
-                                                            title = stringResource(R.string.modules_background_actions),
-                                                            summary = stringResource(R.string.modules_background_actions_summary),
-                                                            checked = allowBackgroundActions,
-                                                            onCheckedChange = { enabled ->
-                                                                ModuleSettings.setAllowBackgroundActions(enabled)
-                                                                allowBackgroundActions = enabled
-                                                            }
-                                                        )
-                                                        SettingsSwitchItem(
-                                                            index = idx++,
-                                                            count = accessItemCount,
-                                                            icon = R.drawable.ic_shield_24,
-                                                            title = stringResource(R.string.modules_background_check_title),
-                                                            summary = stringResource(R.string.modules_background_check_summary),
-                                                            checked = backgroundCheckEnabled,
-                                                            onCheckedChange = { enabled ->
-                                                                ModuleSettings.setBackgroundCheckEnabled(enabled)
-                                                                backgroundCheckEnabled = enabled
-                                                                if (enabled) {
-                                                                    NightDogClient.ensurePeriodicLoop()
+                                                        SettingsSection(stringResource(R.string.settings_modules_recommendations)) {
+                                                            SettingsSwitchItem(
+                                                                index = 0,
+                                                                count = 2,
+                                                                icon = R.drawable.ic_warning_24,
+                                                                title = stringResource(R.string.modules_recommand_webui),
+                                                                summary = stringResource(R.string.modules_recommand_webui_summary),
+                                                                checked = recommandWebUi,
+                                                                onCheckedChange = { enabled ->
+                                                                    ModuleSettings.setRecommandForWebUi(enabled)
+                                                                    recommandWebUi = enabled
                                                                 }
-                                                            }
-                                                        )
-                                                        SettingsItem(
-                                                            index = idx,
-                                                            count = accessItemCount,
-                                                            icon = R.drawable.ic_outline_notifications_active_24,
-                                                            title = stringResource(R.string.update_settings_title),
-                                                            summary = stringResource(R.string.update_settings_entry_summary),
-                                                            onClick = { showUpdateSettings = true }
-                                                        )
-                                                    }
-                                                    SettingsSection(stringResource(R.string.settings_modules_recommendations)) {
-                                                        SettingsSwitchItem(
-                                                            index = 0,
-                                                            count = 2,
-                                                            icon = R.drawable.ic_warning_24,
-                                                            title = stringResource(R.string.modules_recommand_webui),
-                                                            summary = stringResource(R.string.modules_recommand_webui_summary),
-                                                            checked = recommandWebUi,
-                                                            onCheckedChange = { enabled ->
-                                                                ModuleSettings.setRecommandForWebUi(enabled)
-                                                                recommandWebUi = enabled
-                                                            }
-                                                        )
-                                                        SettingsSwitchItem(
-                                                            index = 1,
-                                                            count = 2,
-                                                            icon = R.drawable.ic_warning_24,
-                                                            title = stringResource(R.string.modules_recommand_action),
-                                                            summary = stringResource(R.string.modules_recommand_action_summary),
-                                                            checked = recommandAction,
-                                                            onCheckedChange = { enabled ->
-                                                                ModuleSettings.setRecommandForAction(enabled)
-                                                                recommandAction = enabled
-                                                            }
-                                                        )
+                                                            )
+                                                            SettingsSwitchItem(
+                                                                index = 1,
+                                                                count = 2,
+                                                                icon = R.drawable.ic_warning_24,
+                                                                title = stringResource(R.string.modules_recommand_action),
+                                                                summary = stringResource(R.string.modules_recommand_action_summary),
+                                                                checked = recommandAction,
+                                                                onCheckedChange = { enabled ->
+                                                                    ModuleSettings.setRecommandForAction(enabled)
+                                                                    recommandAction = enabled
+                                                                }
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
