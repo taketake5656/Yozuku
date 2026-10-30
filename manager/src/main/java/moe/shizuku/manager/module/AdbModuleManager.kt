@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import moe.shizuku.manager.application
 import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
 import java.io.BufferedInputStream
@@ -29,7 +30,7 @@ object AdbModuleManager {
     private const val MAX_OUTPUT_CHARS = 64 * 1024
     private const val MAX_SCRIPT_BYTES = 256 * 1024
     @Volatile private var servicesStartedForBinder = false
-    private val idRegex = Regex("[A-Za-z][A-Za-z0-9._-]{1,63}")
+    private val idRegex = ModuleRuntimeUtils.MODULE_ID_REGEX
     private val installMutexes = ConcurrentHashMap<String, Mutex>()
 
     fun cleanupStagingDirs(context: Context) {
@@ -70,32 +71,35 @@ object AdbModuleManager {
         val dir = module.directory
 
         if (!dir.isDirectory) {
-            issues += "Каталог модуля отсутствует"
+            issues += "Module directory is missing"
         } else {
             val propFile = dir.resolve("module.prop")
             if (!propFile.isFile || !propFile.canRead()) {
-                issues += "Повреждён или недоступен module.prop"
+                issues += "Corrupted or unreadable module.prop"
+            } else {
+                val props = parseModuleProp(propFile.readText(Charsets.UTF_8))
+                ModuleRuntimeUtils.verifyModuleHostRequirements(props)?.let { issues += it }
             }
             markScriptsExecutable(dir)
         }
 
         module.actionScript?.let { script ->
             if (!script.isFile) {
-                issues += "Отсутствует action.sh"
+                issues += "Missing action.sh"
             } else if (script.length() == 0L) {
-                issues += "Пустой скрипт action.sh"
+                issues += "Empty action.sh script"
             } else if (script.length() > MAX_SCRIPT_BYTES) {
-                issues += "Слишком большой action.sh (${script.length() / 1024} КБ)"
+                issues += "action.sh exceeds size limit (${script.length() / 1024} KB)"
             }
         }
 
         module.serviceScript?.let { script ->
             if (!script.isFile) {
-                issues += "Отсутствует service.sh"
+                issues += "Missing service.sh"
             } else if (script.length() == 0L) {
-                issues += "Пустой скрипт service.sh"
+                issues += "Empty service.sh script"
             } else if (script.length() > MAX_SCRIPT_BYTES) {
-                issues += "Слишком большой service.sh (${script.length() / 1024} КБ)"
+                issues += "service.sh exceeds size limit (${script.length() / 1024} KB)"
             }
         }
 
@@ -103,7 +107,7 @@ object AdbModuleManager {
             val indexHtml = webDir.resolve("index.html").takeIf { it.isFile }
                 ?: webDir.resolve("index.htm").takeIf { it.isFile }
             if (indexHtml == null || indexHtml.length() == 0L) {
-                issues += "Повреждён WebUI (отсутствует index.html)"
+                issues += "Corrupted WebUI (missing index.html)"
             }
         }
 
@@ -111,7 +115,7 @@ object AdbModuleManager {
         val lastServiceExit = module.lastServiceExitCode
 
         if (lastServiceExit != null && lastServiceExit != 0) {
-            issues += "service.sh завершился с кодом $lastServiceExit"
+            issues += "service.sh exited with code $lastServiceExit"
         }
 
         ModuleHealthStatus(
@@ -171,6 +175,7 @@ object AdbModuleManager {
                 val props = parseModuleProp(propBytes.toString(Charsets.UTF_8.name()))
                 val id = props["id"]?.trim().orEmpty()
                 require(idRegex.matches(id)) { "Invalid module id: $id" }
+                ModuleRuntimeUtils.verifyModuleHostRequirements(props)?.let { error(it) }
 
                 installMutexes.getOrPut(id) { Mutex() }.withLock {
                     val modulesDir = modulesRoot(context)
@@ -240,6 +245,8 @@ object AdbModuleManager {
                         }
                         markScriptsExecutable(target)
                         val installed = readModule(target) ?: error("Installed module is unreadable.")
+                        // Write initial Nightzuku host attestation file into module directory
+                        ModuleRuntimeUtils.buildModuleEnvironment(context, installed)
                         backup.deleteRecursively()
                         installed
                     } catch (t: Throwable) {
@@ -320,14 +327,8 @@ object AdbModuleManager {
 
         val binder = Shizuku.getBinder() ?: error("Shizuku service is not running.")
         val service = IShizukuService.Stub.asInterface(binder)
-        val env = arrayOf(
-            "MODDIR=${module.directory.absolutePath}",
-            "ASH_STANDALONE=1",
-            "SHIZUKU_MODULE_ID=${module.id}",
-            "SHIZUKU_MODULE_MODE=${ModuleSettings.getAccessMode().value}",
-            "SHIZUKU_MODULE_TRUSTED=${if (ModuleSettings.isModuleTrusted(module.id)) "1" else "0"}",
-            "SHIZUKU_MODULE_BACKGROUND=${if (ModuleSettings.canRunBackground(module)) "1" else "0"}"
-        )
+        val ctx = runCatching { application.applicationContext }.getOrNull()
+        val env = ModuleRuntimeUtils.buildModuleEnvironment(ctx, module, module.directory)
         val wrappedScript = "cd \"\$MODDIR\" 2>/dev/null || true\n$scriptContent"
         val remote = service.newProcess(
             arrayOf("sh", "-c", wrappedScript),
@@ -342,13 +343,13 @@ object AdbModuleManager {
         var stderr = ""
         val stdoutThread = Thread {
             try {
-                stdout = readStreamTail(stdoutPfd)
+                stdout = ModuleRuntimeUtils.readStreamTail(stdoutPfd, MAX_OUTPUT_CHARS)
             } catch (_: Exception) {
             }
         }
         val stderrThread = Thread {
             try {
-                stderr = readStreamTail(stderrPfd)
+                stderr = ModuleRuntimeUtils.readStreamTail(stderrPfd, MAX_OUTPUT_CHARS)
             } catch (_: Exception) {
             }
         }
@@ -382,32 +383,10 @@ object AdbModuleManager {
         return result
     }
 
-    private fun readStreamTail(fd: ParcelFileDescriptor): String {
-        return ParcelFileDescriptor.AutoCloseInputStream(fd).use { input ->
-            java.io.BufferedReader(java.io.InputStreamReader(input, Charsets.UTF_8)).use { reader ->
-                val tail = StringBuilder()
-                val buffer = CharArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val read = reader.read(buffer)
-                    if (read <= 0) break
-                    tail.append(buffer, 0, read)
-                    if (tail.length > MAX_OUTPUT_CHARS * 2) {
-                        tail.delete(0, tail.length - MAX_OUTPUT_CHARS)
-                    }
-                }
-                if (tail.length > MAX_OUTPUT_CHARS) {
-                    tail.substring(tail.length - MAX_OUTPUT_CHARS)
-                } else {
-                    tail.toString()
-                }
-            }
-        }
-    }
-
     fun readModule(directory: File): AdbModule? {
         val propsFile = directory.resolve("module.prop")
         if (!propsFile.isFile) return null
-        val props = parseModuleProp(propsFile.readText())
+        val props = parseModuleProp(propsFile.readText(Charsets.UTF_8))
         val id = props["id"]?.takeIf { idRegex.matches(it) } ?: return null
         val name = props["name"]?.takeIf { it.isNotBlank() } ?: id
         return AdbModule(
@@ -446,33 +425,14 @@ object AdbModuleManager {
         )
     }
 
-    internal fun parseModuleProp(raw: String): Map<String, String> {
-        return raw.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
-            .associate {
-                val index = it.indexOf('=')
-                it.substring(0, index).trim() to it.substring(index + 1).trim()
-            }
-    }
+    internal fun parseModuleProp(raw: String): Map<String, String> =
+        ModuleRuntimeUtils.parseProps(raw)
 
-    internal fun cleanZipName(name: String): String {
-        val clean = name.replace('\\', '/').trim('/')
-        require(clean.isNotBlank()) { "Invalid ZIP entry." }
-        val parts = clean.split('/')
-        require(parts.none { it.isBlank() || it == "." || it == ".." }) {
-            "Unsafe ZIP entry: $name"
-        }
-        return clean
-    }
+    internal fun cleanZipName(name: String): String =
+        ModuleRuntimeUtils.cleanRelativePath(name)
 
-    internal fun ensureInside(root: File, child: File) {
-        val rootPath = root.canonicalPath
-        val childPath = child.canonicalPath
-        require(childPath == rootPath || childPath.startsWith("$rootPath/")) {
-            "Unsafe module path: ${child.name}"
-        }
-    }
+    internal fun ensureInside(root: File, child: File) =
+        ModuleRuntimeUtils.ensureInside(root, child)
 
     private fun markScriptsExecutable(directory: File) {
         directory.walkTopDown().forEach { file ->

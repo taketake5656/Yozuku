@@ -2,6 +2,7 @@ package moe.shizuku.manager.module.discovery
 
 import android.util.Log
 import kotlinx.serialization.json.Json
+import moe.shizuku.manager.module.ModuleRuntimeUtils
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -202,16 +203,10 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
         repo: String,
         subPath: String?
     ): DiscoveredModule? {
-        val props = raw.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
-            .associate {
-                val index = it.indexOf('=')
-                it.substring(0, index).trim() to it.substring(index + 1).trim()
-            }
+        val props = ModuleRuntimeUtils.parseProps(raw)
 
         val id = props["id"]?.takeIf { it.isNotBlank() } ?: return null
-        if (!ID_REGEX.matches(id)) return null
+        if (!ModuleRuntimeUtils.MODULE_ID_REGEX.matches(id)) return null
         val name = props["name"]?.takeIf { it.isNotBlank() } ?: id
 
         return DiscoveredModule(
@@ -234,7 +229,6 @@ class ModuleValidator(private val client: OkHttpClient, private val rateLimit: R
 
     companion object {
         private const val TAG = "ModuleValidator"
-        private val ID_REGEX = Regex("[A-Za-z][A-Za-z0-9._-]{1,63}")
         private val IGNORED_DIRS = setOf(
             "gradle", "build", "src", "docs", "doc", "screenshots",
             "assets", "res", "lib", "libs", "test", "tests", "scripts"

@@ -13,10 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,24 +58,13 @@ class LabFeaturesActivity : AppActivity() {
             val scope = rememberCoroutineScope()
             var connectorEnabled by remember { mutableStateOf(ModuleSettings.isConnectorEnabled()) }
             var nightDogEnabled by remember { mutableStateOf(NightDogClient.isEnabled()) }
-            var backgroundCheckEnabled by remember { mutableStateOf(ModuleSettings.isBackgroundCheckEnabled()) }
-            var allowBackgroundActions by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
             var showUnsafeDialog by remember { mutableStateOf(false) }
             var showNightDogDialog by remember { mutableStateOf(false) }
 
-            val isChecking by NightDogClient.isCheckingModules.collectAsState()
-            val lastReport by NightDogClient.lastCheckReport.collectAsState()
             val watchdogStatus by NightDogClient.watchdogStatus.collectAsState()
 
             LaunchedEffect(Unit) {
                 NightDogClient.refreshWatchdogStatus()
-                if (lastReport == null) {
-                    NightDogClient.runBackgroundCheck(
-                        context = context,
-                        forceUpdateCheck = false,
-                        runServices = false
-                    )
-                }
             }
 
             DisposableEffect(Unit) {
@@ -91,48 +78,29 @@ class LabFeaturesActivity : AppActivity() {
                 }
             }
 
-            val statusSummary = when {
-                isChecking -> stringResource(R.string.modules_background_check_running)
-                lastReport != null -> {
-                    val report = lastReport!!
-                    val wdActive = watchdogStatus?.started == true
-                    val wdBound = watchdogStatus?.boundServicesCount ?: 0
-                    val wdRebinds = watchdogStatus?.totalRebinds ?: 0
-                    val wdPart = if (wdActive) {
-                        stringResource(R.string.nightdog_status_active_summary, wdBound, wdRebinds)
-                    } else {
-                        stringResource(R.string.nightdog_status_inactive_summary)
-                    }
-                    val modPart = stringResource(
-                        R.string.modules_background_check_report_summary,
-                        report.healthyModules,
-                        report.totalModules,
-                        report.updatesAvailableCount,
-                        report.issuesCount
-                    )
-                    "$wdPart • $modPart"
-                }
-                else -> stringResource(R.string.modules_background_check_never)
+            val statusSummary = if (watchdogStatus?.started == true) {
+                stringResource(
+                    R.string.nightdog_status_active_summary,
+                    watchdogStatus?.boundServicesCount ?: 0,
+                    watchdogStatus?.totalRebinds ?: 0
+                )
+            } else {
+                stringResource(R.string.nightdog_status_inactive_summary)
             }
 
-            fun triggerManualCheck() {
-                if (isChecking) return
+            fun refreshTelemetry() {
                 scope.launch {
-                    val report = NightDogClient.runManualCheck(
-                        context = context,
-                        checkUpdates = true,
-                        forceRunServices = true
-                    )
-                    Toast.makeText(
-                        context,
+                    val status = NightDogClient.refreshWatchdogStatus()
+                    val msg = if (status?.started == true) {
                         context.getString(
-                            R.string.modules_background_check_toast,
-                            report.healthyModules,
-                            report.totalModules,
-                            report.updatesAvailableCount
-                        ),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                            R.string.nightdog_status_active_summary,
+                            status.boundServicesCount,
+                            status.totalRebinds
+                        )
+                    } else {
+                        context.getString(R.string.nightdog_status_inactive_summary)
+                    }
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 }
             }
 
@@ -179,59 +147,11 @@ class LabFeaturesActivity : AppActivity() {
                                 )
                             }
                             item {
-                                WearSwitchButton(
-                                    checked = backgroundCheckEnabled,
-                                    onCheckedChange = { enabled ->
-                                        backgroundCheckEnabled = enabled
-                                        ModuleSettings.setBackgroundCheckEnabled(enabled)
-                                        if (enabled) {
-                                            NightDogClient.ensurePeriodicLoop()
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = {
-                                        WearText(text = stringResource(R.string.modules_background_check_title))
-                                    },
-                                    secondaryLabel = {
-                                        WearText(text = stringResource(R.string.modules_background_check_summary))
-                                    },
-                                    icon = {
-                                        WearIcon(
-                                            imageVector = Icons.Rounded.TaskAlt,
-                                            contentDescription = null
-                                        )
-                                    }
-                                )
-                            }
-                            item {
-                                WearSwitchButton(
-                                    checked = allowBackgroundActions,
-                                    onCheckedChange = { enabled ->
-                                        allowBackgroundActions = enabled
-                                        ModuleSettings.setAllowBackgroundActions(enabled)
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = {
-                                        WearText(text = stringResource(R.string.modules_background_actions))
-                                    },
-                                    secondaryLabel = {
-                                        WearText(text = stringResource(R.string.modules_background_actions_summary))
-                                    },
-                                    icon = {
-                                        WearIcon(
-                                            imageVector = Icons.Rounded.PlayArrow,
-                                            contentDescription = null
-                                        )
-                                    }
-                                )
-                            }
-                            item {
                                 WearFilledTonalButton(
-                                    onClick = { triggerManualCheck() },
-                                    enabled = !isChecking,
+                                    onClick = { refreshTelemetry() },
                                     modifier = Modifier.fillMaxWidth(),
                                     label = {
-                                        WearText(text = stringResource(R.string.modules_background_check_run_now))
+                                        WearText(text = stringResource(R.string.home_refresh))
                                     },
                                     secondaryLabel = {
                                         WearText(text = statusSummary)
@@ -331,7 +251,7 @@ class LabFeaturesActivity : AppActivity() {
                                 SettingsSection(stringResource(R.string.nightdog_section_title)) {
                                     SettingsSwitchItem(
                                         index = 0,
-                                        count = 4,
+                                        count = 2,
                                         icon = R.drawable.ic_shield_24,
                                         title = stringResource(R.string.nightdog_title),
                                         summary = stringResource(R.string.nightdog_summary),
@@ -345,41 +265,14 @@ class LabFeaturesActivity : AppActivity() {
                                             }
                                         }
                                     )
-                                    SettingsSwitchItem(
-                                        index = 1,
-                                        count = 4,
-                                        icon = R.drawable.ic_server_ok_24dp,
-                                        title = stringResource(R.string.modules_background_check_title),
-                                        summary = stringResource(R.string.modules_background_check_summary),
-                                        checked = backgroundCheckEnabled,
-                                        onCheckedChange = { enabled ->
-                                            backgroundCheckEnabled = enabled
-                                            ModuleSettings.setBackgroundCheckEnabled(enabled)
-                                            if (enabled) {
-                                                NightDogClient.ensurePeriodicLoop()
-                                            }
-                                        }
-                                    )
-                                    SettingsSwitchItem(
-                                        index = 2,
-                                        count = 4,
-                                        icon = R.drawable.ic_terminal_24,
-                                        title = stringResource(R.string.modules_background_actions),
-                                        summary = stringResource(R.string.modules_background_actions_summary),
-                                        checked = allowBackgroundActions,
-                                        onCheckedChange = { enabled ->
-                                            allowBackgroundActions = enabled
-                                            ModuleSettings.setAllowBackgroundActions(enabled)
-                                        }
-                                    )
                                     SettingsItem(
-                                        index = 3,
-                                        count = 4,
+                                        index = 1,
+                                        count = 2,
                                         icon = R.drawable.ic_server_restart,
-                                        title = stringResource(R.string.modules_background_check_run_now),
+                                        title = stringResource(R.string.home_refresh),
                                         summary = statusSummary,
                                         showChevron = false,
-                                        onClick = { triggerManualCheck() }
+                                        onClick = { refreshTelemetry() }
                                     )
                                 }
 

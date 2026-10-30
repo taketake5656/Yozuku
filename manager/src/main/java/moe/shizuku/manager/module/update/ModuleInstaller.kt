@@ -64,7 +64,7 @@ class ModuleInstaller private constructor() {
 
             val resolved = UpdateChecker.getInstance().resolveOwnerAndRepo(module)
                 ?: return@withContext Result.failure(
-                    IllegalStateException("Не удалось определить репозиторий GitHub для модуля ${module.id}")
+                    IllegalStateException("Unable to resolve GitHub repository for module ${module.id}")
                 )
             val (owner, repo, subPath) = resolved
             installModule(

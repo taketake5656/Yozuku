@@ -47,24 +47,13 @@ fun TvLabMenuScreen(
     val scope = rememberCoroutineScope()
     var connectorEnabled by remember { mutableStateOf(ModuleSettings.isConnectorEnabled()) }
     var nightDogEnabled by remember { mutableStateOf(NightDogClient.isEnabled()) }
-    var backgroundCheckEnabled by remember { mutableStateOf(ModuleSettings.isBackgroundCheckEnabled()) }
-    var allowBackgroundActions by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
     var showUnsafeDialog by remember { mutableStateOf(false) }
     var showNightDogDialog by remember { mutableStateOf(false) }
 
-    val isChecking by NightDogClient.isCheckingModules.collectAsState()
-    val lastReport by NightDogClient.lastCheckReport.collectAsState()
     val watchdogStatus by NightDogClient.watchdogStatus.collectAsState()
 
     LaunchedEffect(Unit) {
         NightDogClient.refreshWatchdogStatus()
-        if (lastReport == null) {
-            NightDogClient.runBackgroundCheck(
-                context = context,
-                forceUpdateCheck = false,
-                runServices = false
-            )
-        }
     }
 
     DisposableEffect(Unit) {
@@ -78,28 +67,14 @@ fun TvLabMenuScreen(
         }
     }
 
-    val statusSummary = when {
-        isChecking -> stringResource(R.string.modules_background_check_running)
-        lastReport != null -> {
-            val report = lastReport!!
-            val wdActive = watchdogStatus?.started == true
-            val wdBound = watchdogStatus?.boundServicesCount ?: 0
-            val wdRebinds = watchdogStatus?.totalRebinds ?: 0
-            val wdPart = if (wdActive) {
-                stringResource(R.string.nightdog_status_active_summary, wdBound, wdRebinds)
-            } else {
-                stringResource(R.string.nightdog_status_inactive_summary)
-            }
-            val modPart = stringResource(
-                R.string.modules_background_check_report_summary,
-                report.healthyModules,
-                report.totalModules,
-                report.updatesAvailableCount,
-                report.issuesCount
-            )
-            "$wdPart • $modPart"
-        }
-        else -> stringResource(R.string.modules_background_check_never)
+    val statusSummary = if (watchdogStatus?.started == true) {
+        stringResource(
+            R.string.nightdog_status_active_summary,
+            watchdogStatus?.boundServicesCount ?: 0,
+            watchdogStatus?.totalRebinds ?: 0
+        )
+    } else {
+        stringResource(R.string.nightdog_status_inactive_summary)
     }
 
     Row(modifier = Modifier.fillMaxSize().padding(32.dp)) {
@@ -152,57 +127,22 @@ fun TvLabMenuScreen(
             }
 
             item {
-                TvLabToggleCard(
-                    title = stringResource(R.string.modules_background_check_title),
-                    summary = stringResource(R.string.modules_background_check_summary),
-                    checked = backgroundCheckEnabled,
-                    onToggle = {
-                        val next = !backgroundCheckEnabled
-                        backgroundCheckEnabled = next
-                        ModuleSettings.setBackgroundCheckEnabled(next)
-                        if (next) {
-                            NightDogClient.ensurePeriodicLoop()
-                        }
-                    }
-                )
-            }
-
-            item {
-                TvLabToggleCard(
-                    title = stringResource(R.string.modules_background_actions),
-                    summary = stringResource(R.string.modules_background_actions_summary),
-                    checked = allowBackgroundActions,
-                    onToggle = {
-                        val next = !allowBackgroundActions
-                        allowBackgroundActions = next
-                        ModuleSettings.setAllowBackgroundActions(next)
-                    }
-                )
-            }
-
-            item {
                 TvLabActionCard(
-                    title = stringResource(R.string.modules_background_check_run_now),
+                    title = stringResource(R.string.home_refresh),
                     summary = statusSummary,
                     onClick = {
-                        if (!isChecking) {
-                            scope.launch {
-                                val report = NightDogClient.runManualCheck(
-                                    context = context,
-                                    checkUpdates = true,
-                                    forceRunServices = true
+                        scope.launch {
+                            val status = NightDogClient.refreshWatchdogStatus()
+                            val msg = if (status?.started == true) {
+                                context.getString(
+                                    R.string.nightdog_status_active_summary,
+                                    status.boundServicesCount,
+                                    status.totalRebinds
                                 )
-                                Toast.makeText(
-                                    context,
-                                    context.getString(
-                                        R.string.modules_background_check_toast,
-                                        report.healthyModules,
-                                        report.totalModules,
-                                        report.updatesAvailableCount
-                                    ),
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                            } else {
+                                context.getString(R.string.nightdog_status_inactive_summary)
                             }
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         }
                     }
                 )

@@ -2,6 +2,9 @@ package moe.shizuku.manager.module
 
 import android.os.ParcelFileDescriptor
 import android.webkit.JavascriptInterface
+import kerneldroid.nightzuku.api.NightProtocol
+import moe.shizuku.manager.BuildConfig
+import moe.shizuku.manager.application
 import moe.shizuku.server.IShizukuService
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
@@ -19,6 +22,8 @@ class ModuleJsBridge(
 
     @JavascriptInterface
     fun getModuleInfo(): String {
+        val ctx = runCatching { application.applicationContext }.getOrNull()
+        val signer = ModuleRuntimeUtils.getManagerSignerSha256(ctx)
         return JSONObject().apply {
             put("ok", true)
             put("id", module.id)
@@ -32,6 +37,16 @@ class ModuleJsBridge(
             put("accessMode", ModuleSettings.getAccessMode().value)
             put("trusted", ModuleSettings.isModuleTrusted(module.id))
             put("background", ModuleSettings.canRunBackground(module))
+            put("host", JSONObject().apply {
+                put("genuine", true)
+                put("packageName", ModuleRuntimeUtils.HOST_PACKAGE_ID)
+                put("versionName", BuildConfig.VERSION_NAME)
+                put("versionCode", BuildConfig.VERSION_CODE)
+                put("modulesApiVersion", ModuleRuntimeUtils.HOST_API_VERSION)
+                put("binderDescriptor", NightProtocol.DESCRIPTOR)
+                put("providerAuthority", "${ModuleRuntimeUtils.HOST_PACKAGE_ID}${NightProtocol.PROVIDER_SUFFIX}")
+                put("signerSha256", signer)
+            })
             put("permissions", JSONObject().apply {
                 put("action", ModuleSettings.canRunAction(module))
                 put("service", ModuleSettings.canRunService(module))
@@ -44,6 +59,32 @@ class ModuleJsBridge(
                 put("webDownload", ModuleSettings.canDownloadWebFiles(module))
                 put("declaresShellBridge", module.declaresShellBridge)
             })
+        }.toString()
+    }
+
+    /**
+     * Cryptographic host attestation for WebUI modules to verify they are running inside
+     * genuine Nightzuku (`kerneldroid.nightzuku`) rather than an incompatible fork.
+     */
+    @JavascriptInterface
+    fun verifyHost(challenge: String?): String {
+        val cleanChallenge = challenge?.take(256).orEmpty()
+        val ctx = runCatching { application.applicationContext }.getOrNull()
+        val signer = ModuleRuntimeUtils.getManagerSignerSha256(ctx)
+        val token = ModuleRuntimeUtils.computeAttestationToken(module.id, cleanChallenge, signer)
+        return JSONObject().apply {
+            put("ok", true)
+            put("genuineNightzuku", true)
+            put("hostPackage", ModuleRuntimeUtils.HOST_PACKAGE_ID)
+            put("hostVersion", BuildConfig.VERSION_NAME)
+            put("hostVersionCode", BuildConfig.VERSION_CODE)
+            put("modulesApiVersion", ModuleRuntimeUtils.HOST_API_VERSION)
+            put("binderDescriptor", NightProtocol.DESCRIPTOR)
+            put("providerAuthority", "${ModuleRuntimeUtils.HOST_PACKAGE_ID}${NightProtocol.PROVIDER_SUFFIX}")
+            put("moduleId", module.id)
+            put("challenge", cleanChallenge)
+            put("signerSha256", signer)
+            put("attestationToken", token)
         }.toString()
     }
 
@@ -94,7 +135,6 @@ class ModuleJsBridge(
         }
 
         val trusted = ModuleSettings.isModuleTrusted(module.id)
-        val mode = ModuleSettings.getAccessMode()
         if (!trusted && !module.declaresShellBridge) {
             return shellError("Permission denied: module.prop must declare usesShellBridge=true.")
         }
@@ -120,7 +160,8 @@ class ModuleJsBridge(
         return try {
             val targetDir = resolveModuleDirectory(options.cwd)
             val service = IShizukuService.Stub.asInterface(binder)
-            val env = buildEnvironment(mode, targetDir, options.extraEnv)
+            val ctx = runCatching { application.applicationContext }.getOrNull()
+            val env = ModuleRuntimeUtils.buildModuleEnvironment(ctx, module, targetDir, options.extraEnv)
             // Pass the target working directory via environment variable ($SHIZUKU_MODULE_CWD)
             // rather than interpolating it into double-quoted shell syntax.
             val wrappedCommand = "cd \"\$SHIZUKU_MODULE_CWD\" 2>/dev/null || true\n$command"
@@ -136,13 +177,13 @@ class ModuleJsBridge(
             var stderr = ""
             val stdoutThread = Thread {
                 try {
-                    stdout = readStreamTail(stdoutPfd)
+                    stdout = ModuleRuntimeUtils.readStreamTail(stdoutPfd, MAX_OUTPUT_CHARS)
                 } catch (_: Exception) {
                 }
             }
             val stderrThread = Thread {
                 try {
-                    stderr = readStreamTail(stderrPfd)
+                    stderr = ModuleRuntimeUtils.readStreamTail(stderrPfd, MAX_OUTPUT_CHARS)
                 } catch (_: Exception) {
                 }
             }
@@ -188,24 +229,6 @@ class ModuleJsBridge(
         }
     }
 
-    private fun buildEnvironment(
-        mode: ModuleSettings.AccessMode,
-        targetDir: File,
-        extraEnv: Map<String, String>
-    ): Array<String> {
-        val env = linkedMapOf<String, String>()
-        extraEnv.forEach { (key, value) -> env[key] = value }
-        // Reserved module variables are written last so extraEnv cannot override them
-        env["MODDIR"] = module.directory.absolutePath
-        env["SHIZUKU_MODULE_CWD"] = targetDir.absolutePath
-        env["ASH_STANDALONE"] = "1"
-        env["SHIZUKU_MODULE_ID"] = module.id
-        env["SHIZUKU_MODULE_MODE"] = mode.value
-        env["SHIZUKU_MODULE_TRUSTED"] = if (ModuleSettings.isModuleTrusted(module.id)) "1" else "0"
-        env["SHIZUKU_MODULE_BACKGROUND"] = if (ModuleSettings.canRunBackground(module)) "1" else "0"
-        return env.map { (key, value) -> "$key=$value" }.toTypedArray()
-    }
-
     private fun parseExecOptions(raw: String): ExecOptions {
         if (raw.isBlank()) return ExecOptions()
 
@@ -238,33 +261,11 @@ class ModuleJsBridge(
         )
     }
 
-    private fun readStreamTail(fd: ParcelFileDescriptor): String {
-        return ParcelFileDescriptor.AutoCloseInputStream(fd).use { input ->
-            java.io.BufferedReader(java.io.InputStreamReader(input, Charsets.UTF_8)).use { reader ->
-                val tail = StringBuilder()
-                val buffer = CharArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val read = reader.read(buffer)
-                    if (read <= 0) break
-                    tail.append(buffer, 0, read)
-                    if (tail.length > MAX_OUTPUT_CHARS * 2) {
-                        tail.delete(0, tail.length - MAX_OUTPUT_CHARS)
-                    }
-                }
-                if (tail.length > MAX_OUTPUT_CHARS) {
-                    tail.substring(tail.length - MAX_OUTPUT_CHARS)
-                } else {
-                    tail.toString()
-                }
-            }
-        }
-    }
-
     private fun resolveModuleDirectory(relativePath: String): File {
         if (relativePath.isBlank() || relativePath == ".") return module.directory
-        val clean = cleanRelativePath(relativePath)
+        val clean = ModuleRuntimeUtils.cleanRelativePath(relativePath)
         val directory = File(module.directory, clean)
-        ensureInside(module.directory, directory)
+        ModuleRuntimeUtils.ensureInside(module.directory, directory)
         require(directory.isDirectory) { "cwd is not a directory: $relativePath" }
         return directory
     }
@@ -280,30 +281,16 @@ class ModuleJsBridge(
 
     private fun resolveWebFile(relativeWebPath: String): File {
         val root = module.webRoot ?: error("Module has no WebUI root.")
-        val clean = cleanRelativePath(relativeWebPath)
+        val clean = ModuleRuntimeUtils.cleanRelativePath(relativeWebPath)
         if (!ModuleSettings.isModuleTrusted(module.id)) {
             require(!clean.equals("index.html", ignoreCase = true) && !clean.endsWith("/index.html", ignoreCase = true)) {
                 "download() cannot overwrite WebUI entry files."
             }
         }
         val file = File(root, clean)
-        ensureInside(root, file)
+        ModuleRuntimeUtils.ensureInside(root, file)
         require(!file.isDirectory) { "Destination is a directory." }
         return file
-    }
-
-    private fun cleanRelativePath(path: String): String {
-        val clean = path.replace('\\', '/').trim('/')
-        require(clean.isNotBlank()) { "Path is blank." }
-        val parts = clean.split('/')
-        require(parts.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe path: $path" }
-        return clean
-    }
-
-    private fun ensureInside(root: File, file: File) {
-        val rootPath = root.canonicalFile.toPath()
-        val filePath = file.canonicalFile.toPath()
-        require(filePath.startsWith(rootPath)) { "Path escapes module directory." }
     }
 
     private fun downloadHttpsToFile(rawUrl: String, outFile: File): Long {
@@ -316,7 +303,7 @@ class ModuleJsBridge(
                 connectTimeout = NETWORK_TIMEOUT_MS
                 readTimeout = NETWORK_TIMEOUT_MS
                 requestMethod = "GET"
-                setRequestProperty("User-Agent", "Shizuku-Module-WebUI/1.0")
+                setRequestProperty("User-Agent", "Nightzuku-Module-WebUI/2.0")
             }
 
             try {

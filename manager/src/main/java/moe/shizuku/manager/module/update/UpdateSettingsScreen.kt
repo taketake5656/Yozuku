@@ -54,8 +54,6 @@ fun UpdateSettingsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var backgroundCheckEnabled by remember { mutableStateOf(ModuleSettings.isBackgroundCheckEnabled()) }
-    var allowBackgroundActions by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
     var catalogEnabled by remember { mutableStateOf(ModuleSettings.isCatalogEnabled()) }
     var updateFrequency by remember { mutableStateOf(ModuleSettings.getUpdateFrequency()) }
     var autoUpdateEnabled by remember { mutableStateOf(ModuleSettings.isAutoUpdateEnabled()) }
@@ -65,7 +63,9 @@ fun UpdateSettingsScreen(
     var githubPat by remember { mutableStateOf(TokenStore.getToken(context) ?: "") }
     var showPatDialog by remember { mutableStateOf(false) }
 
-    val isChecking by NightDogClient.isCheckingModules.collectAsState()
+    val isCheckingModules by NightDogClient.isCheckingModules.collectAsState()
+    val isCheckingUpdates by ModuleUpdateScheduler.isCheckingUpdates.collectAsState()
+    val isChecking = isCheckingModules || isCheckingUpdates
     val lastReport by NightDogClient.lastCheckReport.collectAsState()
 
     val checkSummary = when {
@@ -89,39 +89,59 @@ fun UpdateSettingsScreen(
             onNavigateUp = onNavigateUp
         ) {
             item {
-                SettingsSection(title = stringResource(R.string.nightdog_section_title)) {
-                    SettingsSwitchItem(
+                SettingsSection(title = stringResource(R.string.update_settings_frequency)) {
+                    UpdateFrequencyDropdown(
                         index = 0,
-                        count = 3,
-                        icon = R.drawable.ic_shield_24,
-                        title = stringResource(R.string.modules_background_check_title),
-                        summary = stringResource(R.string.modules_background_check_summary),
-                        checked = backgroundCheckEnabled,
-                        onCheckedChange = {
-                            backgroundCheckEnabled = it
-                            ModuleSettings.setBackgroundCheckEnabled(it)
-                            if (it) {
-                                NightDogClient.ensurePeriodicLoop()
-                            }
+                        count = 5,
+                        selected = updateFrequency,
+                        onSelect = {
+                            updateFrequency = it
+                            ModuleSettings.setUpdateFrequency(it)
+                            ModuleUpdateScheduler.syncSchedule(context)
                         }
                     )
                     SettingsSwitchItem(
                         index = 1,
-                        count = 3,
-                        icon = R.drawable.ic_terminal_24,
-                        title = stringResource(R.string.modules_background_actions),
-                        summary = stringResource(R.string.modules_background_actions_summary),
-                        checked = allowBackgroundActions,
+                        count = 5,
+                        icon = R.drawable.ic_outline_arrow_upward_24,
+                        title = stringResource(R.string.update_settings_auto_update),
+                        summary = stringResource(R.string.update_settings_auto_update_summary),
+                        checked = autoUpdateEnabled,
                         onCheckedChange = {
-                            allowBackgroundActions = it
-                            ModuleSettings.setAllowBackgroundActions(it)
+                            autoUpdateEnabled = it
+                            ModuleSettings.setAutoUpdateEnabled(it)
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 2,
+                        count = 5,
+                        icon = R.drawable.ic_settings_outline_24dp,
+                        title = stringResource(R.string.update_settings_wifi_only),
+                        summary = stringResource(R.string.update_settings_wifi_only_summary),
+                        checked = wifiOnly,
+                        onCheckedChange = {
+                            wifiOnly = it
+                            ModuleSettings.setUpdateWifiOnly(it)
+                            ModuleUpdateScheduler.syncSchedule(context)
+                        }
+                    )
+                    SettingsSwitchItem(
+                        index = 3,
+                        count = 5,
+                        icon = R.drawable.ic_outline_notifications_active_24,
+                        title = stringResource(R.string.update_settings_notifications),
+                        summary = stringResource(R.string.update_settings_notifications_summary),
+                        checked = notificationsEnabled,
+                        onCheckedChange = {
+                            notificationsEnabled = it
+                            ModuleSettings.setUpdateNotificationsEnabled(it)
                         }
                     )
                     SettingsItem(
-                        index = 2,
-                        count = 3,
+                        index = 4,
+                        count = 5,
                         icon = R.drawable.ic_server_restart,
-                        title = stringResource(R.string.modules_background_check_run_now),
+                        title = stringResource(R.string.modules_background_check_short),
                         summary = checkSummary,
                         showChevron = false,
                         onClick = {
@@ -130,7 +150,7 @@ fun UpdateSettingsScreen(
                                     val report = NightDogClient.runManualCheck(
                                         context = context,
                                         checkUpdates = true,
-                                        forceRunServices = true
+                                        forceRunServices = false
                                     )
                                     Toast.makeText(
                                         context,
@@ -144,60 +164,6 @@ fun UpdateSettingsScreen(
                                     ).show()
                                 }
                             }
-                        }
-                    )
-                }
-            }
-
-            item {
-                Spacer(Modifier.height(8.dp))
-            }
-
-            item {
-                SettingsSection(title = stringResource(R.string.update_settings_frequency)) {
-                    UpdateFrequencyDropdown(
-                        index = 0,
-                        count = 4,
-                        selected = updateFrequency,
-                        onSelect = {
-                            updateFrequency = it
-                            ModuleSettings.setUpdateFrequency(it)
-                        }
-                    )
-                    SettingsSwitchItem(
-                        index = 1,
-                        count = 4,
-                        icon = R.drawable.ic_outline_arrow_upward_24,
-                        title = stringResource(R.string.update_settings_auto_update),
-                        summary = stringResource(R.string.update_settings_auto_update_summary),
-                        checked = autoUpdateEnabled,
-                        onCheckedChange = {
-                            autoUpdateEnabled = it
-                            ModuleSettings.setAutoUpdateEnabled(it)
-                        }
-                    )
-                    SettingsSwitchItem(
-                        index = 2,
-                        count = 4,
-                        icon = R.drawable.ic_settings_outline_24dp,
-                        title = stringResource(R.string.update_settings_wifi_only),
-                        summary = stringResource(R.string.update_settings_wifi_only_summary),
-                        checked = wifiOnly,
-                        onCheckedChange = {
-                            wifiOnly = it
-                            ModuleSettings.setUpdateWifiOnly(it)
-                        }
-                    )
-                    SettingsSwitchItem(
-                        index = 3,
-                        count = 4,
-                        icon = R.drawable.ic_outline_notifications_active_24,
-                        title = stringResource(R.string.update_settings_notifications),
-                        summary = stringResource(R.string.update_settings_notifications_summary),
-                        checked = notificationsEnabled,
-                        onCheckedChange = {
-                            notificationsEnabled = it
-                            ModuleSettings.setUpdateNotificationsEnabled(it)
                         }
                     )
                 }
