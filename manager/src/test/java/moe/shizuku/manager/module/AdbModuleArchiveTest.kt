@@ -85,43 +85,51 @@ class AdbModuleArchiveTest {
 
     @Test
     fun `verifyModuleHostRequirements enforces Nightzuku runtime and API minimums`() {
-        ModuleRuntimeUtils.verifyModuleHostRequirements(
-            mapOf(
-                "id" to "night_perf",
-                "requireNightzuku" to "true",
-                "minNightzukuApi" to "1",
-                "minNightzukuVersion" to "13"
+        assertEquals(
+            null,
+            ModuleRuntimeUtils.verifyModuleHostRequirements(
+                mapOf(
+                    "id" to "night_perf",
+                    "requireNightzuku" to "true",
+                    "minNightzukuApi" to "1",
+                    "minNightzukuVersion" to "13"
+                )
             )
         )
 
-        assertThrows(IllegalArgumentException::class.java) {
-            ModuleRuntimeUtils.verifyModuleHostRequirements(
-                mapOf(
-                    "id" to "future_mod",
-                    "minNightzukuApi" to "999"
-                )
+        val apiError = ModuleRuntimeUtils.verifyModuleHostRequirements(
+            mapOf(
+                "id" to "future_mod",
+                "minNightzukuApi" to "999"
             )
-        }
+        )
+        assertTrue(apiError?.contains("v999") == true)
+
+        val versionError = ModuleRuntimeUtils.verifyModuleHostRequirements(
+            mapOf(
+                "id" to "future_mod",
+                "minNightzukuVersion" to "999999999"
+            )
+        )
+        assertTrue(versionError?.contains("versionCode") == true)
     }
 
     @Test
-    fun `buildHostAttestationEnv and writeHostAttestationFile produce deterministic verifiable tokens`() {
+    fun `attestation tokens are deterministic per module and challenge and written to the env file`() {
         val modDir = tempFolder.newFolder("mod_test")
-        val env = ModuleRuntimeUtils.buildHostAttestationEnv("mod_test")
 
-        assertEquals("kerneldroid.nightzuku", env["NIGHTZUKU_HOST_PACKAGE"])
-        assertEquals("kerneldroid.nightzuku.INightService", env["NIGHTZUKU_WIRE_PROTOCOL"])
-        assertTrue(env["NIGHTZUKU_HOST_TOKEN"]!!.length == 64)
+        val token = ModuleRuntimeUtils.computeAttestationToken("mod_test", "nonce-123")
+        assertEquals(64, token.length)
+        assertTrue(token.matches(Regex("[0-9a-f]{64}")))
+        assertEquals(token, ModuleRuntimeUtils.computeAttestationToken("mod_test", "nonce-123"))
+        assertFalse(token == ModuleRuntimeUtils.computeAttestationToken("mod_test", "nonce-456"))
+        assertFalse(token == ModuleRuntimeUtils.computeAttestationToken("other_mod", "nonce-123"))
 
-        val response = ModuleRuntimeUtils.computeChallengeToken("mod_test", "nonce-123")
-        val otherResponse = ModuleRuntimeUtils.computeChallengeToken("mod_test", "nonce-456")
-        assertEquals(64, response.length)
-        assertFalse(response == otherResponse)
-
-        val envFile = ModuleRuntimeUtils.writeHostAttestationFile(modDir, "mod_test")
-        assertTrue(envFile.isFile)
-        val envContent = envFile.readText()
-        assertTrue(envContent.contains("NIGHTZUKU_HOST_PACKAGE='kerneldroid.nightzuku'"))
-        assertTrue(envContent.contains("NIGHTZUKU_HOST_TOKEN='${env["NIGHTZUKU_HOST_TOKEN"]}'"))
+        val envFile = ModuleRuntimeUtils.writeModuleAttestationFile(modDir, "mod_test", "signer", token)
+        assertTrue(envFile?.isFile == true)
+        val envContent = envFile!!.readText()
+        assertTrue(envContent.contains("NIGHTZUKU_HOST_PKG=kerneldroid.nightzuku"))
+        assertTrue(envContent.contains("NIGHTZUKU_BINDER_DESCRIPTOR=kerneldroid.nightzuku.INightService"))
+        assertTrue(envContent.contains("NIGHTZUKU_SESSION_TOKEN=$token"))
     }
 }

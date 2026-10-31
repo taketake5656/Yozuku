@@ -213,13 +213,13 @@ object ModuleRuntimeUtils {
         return env.map { (k, v) -> "$k=$v" }.toTypedArray()
     }
 
-    private fun writeModuleAttestationFile(
+    internal fun writeModuleAttestationFile(
         moduleDir: File,
         moduleId: String,
         signerSha256: String,
         sessionToken: String
-    ) {
-        runCatching {
+    ): File? {
+        return runCatching {
             val envFile = moduleDir.resolve(ATTESTATION_FILE_NAME)
             envFile.writeText(
                 buildString {
@@ -238,6 +238,7 @@ object ModuleRuntimeUtils {
                 Charsets.UTF_8
             )
             envFile.setReadable(true, false)
-        }
+            envFile
+        }.getOrNull()
     }
 }

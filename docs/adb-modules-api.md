@@ -90,13 +90,15 @@ SHIZUKU_MODULE_ID=<id>
 SHIZUKU_MODULE_MODE=safe|custom|full
 SHIZUKU_MODULE_TRUSTED=0|1
 SHIZUKU_MODULE_BACKGROUND=0|1
-NIGHTZUKU_HOST_PACKAGE=kerneldroid.nightzuku
+NIGHTZUKU_HOST=1
+NIGHTZUKU_HOST_PKG=kerneldroid.nightzuku
+NIGHTZUKU_HOST_VERSION=<manager_version_name>
 NIGHTZUKU_HOST_VERSION_CODE=<manager_version_code>
-NIGHTZUKU_WIRE_PROTOCOL=kerneldroid.nightzuku.INightService
-NIGHTZUKU_MODULE_API=1
-NIGHTZUKU_SERVER_UID=<0|2000>
-NIGHTZUKU_HOST_TOKEN=<64-char HMAC-SHA256 token bound to module id>
-NIGHTZUKU_ENV_FILE=$MODDIR/.nightzuku_env
+NIGHTZUKU_MODULES_API=2
+NIGHTZUKU_BINDER_DESCRIPTOR=kerneldroid.nightzuku.INightService
+NIGHTZUKU_PROVIDER_AUTHORITY=kerneldroid.nightzuku.nightzuku
+NIGHTZUKU_SIGNER_SHA256=<manager signing certificate SHA-256>
+NIGHTZUKU_SESSION_TOKEN=<64-char HMAC-SHA256 token bound to module id>
 ```
 
 Use `MODDIR` for all module-local files. Do not assume root paths such as `/data/adb/modules`.
@@ -107,18 +109,17 @@ Third-party forks (such as "Shizuku Next") sometimes copy Nightzuku's module UI 
 
 ### How Multi-Layer Host Verification Works
 
-1. **Path & Package Identity Check**: Verifies `MODDIR` belongs to `kerneldroid.nightzuku`, `NIGHTZUKU_HOST_PACKAGE=kerneldroid.nightzuku`, and `NIGHTZUKU_WIRE_PROTOCOL=kerneldroid.nightzuku.INightService`.
-2. **Signed Environment File (`.nightzuku_env`)**: Before each script run, `AdbModuleManager` writes `$MODDIR/.nightzuku_env` containing the module-bound `NIGHTZUKU_HOST_TOKEN` (`HMAC-SHA256`).
+1. **Path & Package Identity Check**: Verifies `MODDIR` belongs to `kerneldroid.nightzuku`, `NIGHTZUKU_HOST_PKG=kerneldroid.nightzuku`, and `NIGHTZUKU_BINDER_DESCRIPTOR=kerneldroid.nightzuku.INightService`.
+2. **Signed Environment File (`.nightzuku_env`)**: Before each script run, `AdbModuleManager` writes `$MODDIR/.nightzuku_env` containing the module-bound `NIGHTZUKU_SESSION_TOKEN` (`HMAC-SHA256`).
 3. **Live Binder IPC Challenge (`verifyNightzukuHost`)**:
-   - **Shell (`nightzuku-guard.sh`)**: Generates a per-invocation random nonce and calls:
+   - **Shell (`nightzuku-guard.sh`)**: Calls:
      ```sh
      content call --uri content://kerneldroid.nightzuku.nightzuku \
        --method verifyNightzukuHost \
-       --arg "$SHIZUKU_MODULE_ID" \
-       --extra "nonce:s:$NONCE"
+       --arg "guard-probe"
      ```
-     `ShizukuManagerProvider` verifies the module ID, computes the HMAC-SHA256 challenge token, and returns `verified=true`, `hostPackage=kerneldroid.nightzuku`, `wireDescriptor=kerneldroid.nightzuku.INightService`, `hostToken`, and `challengeToken`.
-   - **WebUI (`nightzuku-guard.js`)**: Calls `window.Nightzuku.verifyHost(nonce)` (also aliased on `window.Shizuku.verifyHost(nonce)`), verifies the returned host metadata and 64-hex challenge signature, and renders a full-screen blocking banner if loaded inside an incompatible fork.
+     `ShizukuManagerProvider` computes the HMAC-SHA256 challenge token and returns `genuine=true`, `hostPackage=kerneldroid.nightzuku`, `binderDescriptor=kerneldroid.nightzuku.INightService`, `modulesApiVersion`, and `attestationToken`. If `content call` is blocked by SELinux, the guard falls back to comparing `NIGHTZUKU_SESSION_TOKEN` with the token stored in `.nightzuku_env`.
+   - **WebUI (`nightzuku-guard.js`)**: Calls `window.Nightzuku.verifyHost(nonce)` (also aliased on `window.Shizuku.verifyHost(nonce)`), verifies the returned host metadata and 64-hex attestation token, and renders a full-screen blocking banner if loaded inside an incompatible fork.
 
 ### Usage in `action.sh` / `service.sh`
 
