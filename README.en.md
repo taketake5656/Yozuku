@@ -26,8 +26,9 @@ Upstream project reference: <https://github.com/RikkaApps/Shizuku>
 - ADB Modules screen for installing and managing ZIP modules with streaming size budgets and isolated shell execution.
 - Module features: `module.prop`, banner, enable/disable switch, `action.sh`, policy-gated `service.sh`, local WebUI, delete, path checks, size limits, output limits, and last-run logs.
 - Module policy settings: Safe mode, Full access, and background action control.
-- Online Module Catalog (GitHub Topics discovery) with downloads count and per-module out-of-date detection.
-- NightDog watchdog for server health and recovery (monitoring critical and optional platform services).
+- Online Module Catalog (GitHub Topics discovery) with downloads count, expressive full-width cards, and OS-scheduled background update checking via `JobScheduler` (`ModuleUpdateScheduler`).
+- Anti-fork host attestation (`verifyNightzukuHost` IPC + `nightzuku-guard.sh` / `nightzuku-guard.js`) so modules built for Nightzuku can detect and block broken third-party forks.
+- NightDog watchdog for server health, system service recovery, local module integrity verification, and privileged update application.
 - Debug test module under `test-modules/adb-test-module.zip`.
 
 ## Dual-wire architecture & migration
@@ -52,8 +53,7 @@ This is what makes migration calm:
 - [Wear OS Compatibility](docs/wearos-compatibility.en.md)
 - [Wear OS Pairing Guide](docs/wearos-pairing.en.md)
 - [Android TV Support](docs/android-tv-support.en.md)
-- [NightDog Watchdog](docs/nightdog.en.md)
-- [NightDog background work and module updates](docs/nightdog-updates.en.md)
+- [NightDog & Background Module Updates](docs/nightdog.en.md)
 - [GitHub Catalog](docs/github-catalog.en.md)
 
 ## Background

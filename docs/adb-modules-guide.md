@@ -18,10 +18,10 @@ ADB モジュールは、Yozuku のプライベートストレージにインス
 
 これは見た目だけのスタブではなく、実際に動作するモジュールランナーです。ZIP のインストール、
 メタデータの解析、モジュールファイルの保存、Yozuku を通じたシェルスクリプトの実行、
-ローカル WebUI の表示、有効状態の管理、モジュールの削除、最終実行ログの書き込みを行います。
+ローカル WebUI の表示、有効状態の管理、`JobScheduler` によるアップデートの確認、最終実行ログの書き込みを行います。
 
 Magisk/KSU のようなシステムレスオーバーレイの実装ではありません。マウントフックはなく、
-`/data/adb/modules` との互換性も保証しません。また、常駐デーモンの監視機能も現時点ではありません。
+`/data/adb/modules` との互換性も保証しません。また、常駐デーモンの監視機能もありません。
 
 ## 最小構成のモジュール
 
@@ -30,8 +30,10 @@ Magisk/KSU のようなシステムレスオーバーレイの実装ではあり
 ```text
 my-module/
 ├── module.prop
+├── nightzuku-guard.sh
 ├── action.sh
 └── webui/
+    ├── nightzuku-guard.js
     └── index.html
 ```
 
@@ -44,12 +46,20 @@ version=1.0
 versionCode=1
 author=Author
 description=Short module description
+usesShellBridge=true
+requireNightzuku=true
+minNightzukuApi=1
+minNightzukuVersion=13
 ```
 
 `action.sh`:
 
 ```sh
 #!/system/bin/sh
+MODDIR="${MODDIR:-${0%/*}}"
+[ -f "$MODDIR/nightzuku-guard.sh" ] && . "$MODDIR/nightzuku-guard.sh"
+require_nightzuku_host
+
 echo "module=$SHIZUKU_MODULE_ID"
 echo "mode=$SHIZUKU_MODULE_MODE"
 id
@@ -63,6 +73,38 @@ zip -r ../my-module.zip .
 ```
 
 「ADB モジュール」画面から `my-module.zip` をインストールします。
+
+## 不完全なフォークからモジュールを守る（`nightzuku-guard`）
+
+非公式のフォークが Nightzuku のモジュール管理の画面だけをまねて、独自の実行環境 `kerneldroid.nightzuku.INightService` や WebUI のブリッジをきちんと実装していないと、モジュールが何も言わずに失敗したり、思わぬ動きをしたりします。そのフォークの利用者から、モジュールの作者に誤ったバグ報告が届く原因になります。
+
+対応していないフォークでの実行を止めるには、次のようにします。
+
+1. `test-modules/adb-test-module/nightzuku-guard.sh` をモジュールのルートにコピーし、`action.sh` と `service.sh` の先頭で読み込んで `require_nightzuku_host` を呼び出します。
+   ```sh
+   MODDIR="${MODDIR:-${0%/*}}"
+   [ -f "$MODDIR/nightzuku-guard.sh" ] && . "$MODDIR/nightzuku-guard.sh"
+   require_nightzuku_host
+   ```
+2. `test-modules/adb-test-module/webui/nightzuku-guard.js` を `webui/` フォルダにコピーし、`webui/index.html` で最初に読み込んで `NightzukuGuard.enforce(...)` を呼び出します。
+   ```html
+   <script src="nightzuku-guard.js"></script>
+   <script>
+     NightzukuGuard.enforce({ minApiVersion: 2 });
+   </script>
+   ```
+3. `module.prop` に `requireNightzuku=true` と `minNightzukuApi=1` を書きます。
+
+本物の Nightzuku の中で実行されると、`nightzuku-guard` は数ミリ秒で次の 3 つを確かめます。
+- `kerneldroid.nightzuku` のパッケージのパス
+- `.nightzuku_env` の HMAC トークン
+- ContentProvider（`verifyNightzukuHost`）または JavaScript のブリッジへの問い合わせ
+
+非公式のフォークでは、すぐに実行を止めます。そして、使っているアプリが対応していないフォークであること、エラーをモジュールの作者に報告しないでほしいことを、わかりやすく表示します。
+
+> 上流の英語の文書には `require_nightzuku_host` と `NightzukuGuard.enforce(...)` の呼び出しが書かれていませんが、ガードは読み込むだけでは確認を行わないため、テスト用モジュールのコードに合わせて補っています。
+>
+> **Yozuku での動作**: Yozuku はパッケージ ID とプロトコルを変えていないので、ガードの確認は通ります。モジュールの作者が本家の署名証明書の SHA-256 を指定した場合だけ、署名が違うため実行が止まります（[API リファレンス](adb-modules-api.md) の「署名の固定」）。
 
 ## 任意のファイル
 
@@ -93,7 +135,7 @@ usesShellBridge=true
 action=scripts/action.sh
 ```
 
-`window.Shizuku` を必要とする WebUI ページでは、`usesShellBridge=true` の指定が必須です。
+`window.Nightzuku` や `window.Shizuku` を必要とする WebUI ページでは、`usesShellBridge=true` の指定が必須です。
 
 ## スクリプトの実行環境
 
@@ -106,6 +148,11 @@ SHIZUKU_MODULE_ID=<id>
 SHIZUKU_MODULE_MODE=safe|custom|full
 SHIZUKU_MODULE_TRUSTED=0|1
 SHIZUKU_MODULE_BACKGROUND=0|1
+NIGHTZUKU_HOST=1
+NIGHTZUKU_HOST_PKG=kerneldroid.nightzuku
+NIGHTZUKU_MODULES_API=2
+NIGHTZUKU_BINDER_DESCRIPTOR=kerneldroid.nightzuku.INightService
+NIGHTZUKU_SESSION_TOKEN=<64 文字の HMAC トークン>
 ```
 
 Magisk/KSU のパスをハードコードしないでください。`$MODDIR` を使用してください。
@@ -116,11 +163,11 @@ Magisk/KSU のパスをハードコードしないでください。`$MODDIR` �
 
 バックグラウンドでのセットアップには `service.sh` を使用します。次の条件をすべて満たすと実行されます:
 - モジュールが有効になっている。
-- アクセスモードがフルアクセス、またはサービスを有効にしたカスタムである。
+- アクセスモードがフルアクセス、またはサービスを有効にしたカスタムである（またはモジュールが完全信頼になっている）。
 - 設定でバックグラウンドアクションが有効になっている。
 - Yozuku の binder が利用可能である。
 
-マネージャーは、binder セッションごとに 1 回、有効なサービスを自動実行します。
+`NightDogClient` は、binder セッションごとに 1 回と、自動アップデートの後に、有効なサービスを自動実行します。
 
 ## 完全信頼
 
@@ -155,4 +202,4 @@ logs/service-last.log
 test-modules/adb-test-module.zip
 ```
 
-インストール、有効化／無効化、アクション、サービス、WebUI、バナー表示の動作確認に使用してください。
+インストール、有効化／無効化、アクション、サービス、WebUI、フォーク対策のホストの証明（`nightzuku-guard.sh` と `nightzuku-guard.js`）、バナー表示の動作確認に使用してください。

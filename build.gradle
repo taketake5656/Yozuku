@@ -25,8 +25,20 @@ subprojects {
 }
 
 apply from: 'api/manifest.gradle'
-def gitCommitId = 'git rev-parse --short HEAD'.execute([], project.rootDir).text.trim()
-def gitCommitCount = 57
+def resolveGitCommitId = {
+    try {
+        def proc = ['git', 'rev-parse', '--short', 'HEAD'].execute(null, project.rootDir)
+        proc.waitFor()
+        if (proc.exitValue() == 0) {
+            def out = proc.in.text.trim()
+            if (out) return out
+        }
+    } catch (Throwable ignored) {
+    }
+    return "nogit"
+}
+def gitCommitId = resolveGitCommitId()
+def gitCommitCount = 58
 def baseVersionName = "${api_version_major}.7.1"
 ext {
     versionCode = gitCommitCount

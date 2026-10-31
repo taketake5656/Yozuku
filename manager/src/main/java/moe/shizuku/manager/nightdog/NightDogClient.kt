@@ -1,17 +1,9 @@
 package moe.shizuku.manager.nightdog
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Parcel
-import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,38 +17,41 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
 import moe.shizuku.manager.application
+import moe.shizuku.manager.module.AdbModule
 import moe.shizuku.manager.module.AdbModuleManager
 import moe.shizuku.manager.module.ModuleHealthStatus
 import moe.shizuku.manager.module.ModuleSettings
-import moe.shizuku.manager.module.ModulesActivity
-import moe.shizuku.manager.module.catalog.TokenStore
 import moe.shizuku.manager.module.update.ModuleInstaller
-import moe.shizuku.manager.module.update.UpdateChecker
+import moe.shizuku.manager.module.update.ModuleUpdateScheduler
 import moe.shizuku.manager.module.update.UpdateResult
 import moe.shizuku.manager.utils.Logger.LOGGER
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.server.ServerConstants
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Единый фоновый движок NightDog в менеджере (без тяжёлого WorkManager).
+ * Privileged lifecycle and module watchdog coordinator in the Nightzuku Manager.
  *
- * Связан напрямую с жизненным циклом сервера (`OnBinderReceived` / `OnBinderDead`)
- * и периодическим тиком NightDog: контролирует живость `shizuku_server`, перезапускает
- * фоновые `service.sh`, проверяет целостность модулей и выполняет опциональные
- * настраиваемые проверки/автообновления модулей с учётом типа сети и заморозки версий.
+ * Responsibilities:
+ * 1. Synchronizes with the `NightDog` watchdog daemon inside `shizuku_server` over Binder IPC.
+ * 2. Executes and supervises privileged background `service.sh` hooks when `shizuku_server` starts or recovers.
+ * 3. Inspects local ADB module integrity (`module.prop`, executable bits, WebUI assets, script exit codes).
+ * 4. Applies pending module updates and restarts privileged `service.sh` hooks when requested by
+ *    [ModuleUpdateScheduler] or manual user triggers.
+ *
+ * Note: Unprivileged periodic GitHub update polling is handled separately by [ModuleUpdateScheduler]
+ * via Android's `JobScheduler` so network checks respect OS standby/unmetered constraints without
+ * bloating the privileged watchdog loop.
  */
 object NightDogClient {
 
     private const val KEY_NIGHTDOG_ENABLED = "nightdog_enabled"
     private const val KEY_NIGHTDOG_PENDING_SYNC = "nightdog_pending_sync"
     private const val PERIODIC_CHECK_INTERVAL_MS = 15L * 60L * 1000L
-    private const val UPDATE_NOTIFICATION_CHANNEL_ID = "nightzuku_module_updates"
-    private const val UPDATE_NOTIFICATION_ID = 4201
 
     data class ServerWatchdogStatus(
         val enabled: Boolean,
@@ -93,6 +88,9 @@ object NightDogClient {
     private val initialized = AtomicBoolean(false)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val checkMutex = Mutex()
+    private val updateApplyMutex = Mutex()
+    private val pendingPrivilegeUpdates = ConcurrentHashMap<String, UpdateResult>()
+
     @Volatile
     private var appContext: Context? = null
     @Volatile
@@ -111,13 +109,21 @@ object NightDogClient {
         syncWithServer()
         refreshWatchdogStatus()
         val ctx = resolveContext() ?: return@OnBinderReceivedListener
-        if (ModuleSettings.isBackgroundCheckEnabled() || isEnabled()) {
-            scope.launch {
+        scope.launch {
+            flushPendingPrivilegeUpdates(ctx)
+            if (ModuleSettings.isBackgroundCheckEnabled() || isEnabled()) {
                 runBackgroundCheck(
                     context = ctx,
                     forceUpdateCheck = false,
                     runServices = true,
                     forceRunServices = false,
+                    onServerStart = true
+                )
+            }
+            if (ModuleSettings.getUpdateFrequency() == ModuleSettings.UpdateFrequency.ON_START) {
+                ModuleUpdateScheduler.checkUpdates(
+                    context = ctx,
+                    force = false,
                     onServerStart = true
                 )
             }
@@ -134,6 +140,7 @@ object NightDogClient {
     fun init(context: Context? = null) {
         if (context != null) {
             appContext = context.applicationContext
+            ModuleUpdateScheduler.syncSchedule(context.applicationContext)
         }
         if (!initialized.compareAndSet(false, true)) return
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
@@ -270,6 +277,67 @@ object NightDogClient {
         return status
     }
 
+    /**
+     * Installs discovered updates and restarts privileged `service.sh` scripts when the server is alive.
+     * If a module requires a privileged `service.sh` restart and the server is currently offline,
+     * the package files are updated immediately and the service restart is queued for `OnBinderReceived`.
+     */
+    suspend fun applyUpdates(
+        context: Context,
+        targets: List<Pair<AdbModule, UpdateResult>>
+    ): List<AdbModule> = withContext(Dispatchers.IO) {
+        updateApplyMutex.withLock {
+            val installer = ModuleInstaller.getInstance()
+            val updatedModules = mutableListOf<AdbModule>()
+            val serverAlive = isServerAvailable()
+
+            for ((module, upd) in targets) {
+                if (ModuleSettings.isModuleUpdateIgnored(module.id) || !upd.hasUpdate) continue
+                installer.updateModule(context, module, upd).onSuccess { updatedMod ->
+                    updatedModules += updatedMod
+                    if (updatedMod.enabled && updatedMod.hasService &&
+                        ModuleSettings.canRunService(updatedMod) && ModuleSettings.canRunBackground(updatedMod)
+                    ) {
+                        if (serverAlive) {
+                            runCatching { AdbModuleManager.runService(updatedMod) }
+                        } else {
+                            pendingPrivilegeUpdates[updatedMod.id] = upd
+                        }
+                    }
+                }
+            }
+            updatedModules
+        }
+    }
+
+    private suspend fun flushPendingPrivilegeUpdates(context: Context) {
+        if (pendingPrivilegeUpdates.isEmpty() || !isServerAvailable()) return
+        updateApplyMutex.withLock {
+            val modulesById = AdbModuleManager.listModules(context).associateBy { it.id }
+            val pendingIds = pendingPrivilegeUpdates.keys.toList()
+            for (id in pendingIds) {
+                pendingPrivilegeUpdates.remove(id)
+                val mod = modulesById[id] ?: continue
+                if (mod.enabled && mod.hasService &&
+                    ModuleSettings.canRunService(mod) && ModuleSettings.canRunBackground(mod)
+                ) {
+                    runCatching { AdbModuleManager.runService(mod) }
+                }
+            }
+        }
+    }
+
+    internal fun notifyUpdatesChanged(
+        updatesMap: Map<String, UpdateResult>,
+        autoUpdatedNames: List<String>
+    ) {
+        val current = _lastCheckReport.value ?: return
+        _lastCheckReport.value = current.copy(
+            updatesByModule = updatesMap,
+            autoUpdatedModules = if (autoUpdatedNames.isNotEmpty()) autoUpdatedNames else current.autoUpdatedModules
+        )
+    }
+
     suspend fun runManualCheck(
         context: Context,
         checkUpdates: Boolean = true,
@@ -282,19 +350,6 @@ object NightDogClient {
             forceRunServices = forceRunServices,
             onServerStart = false
         )
-    }
-
-    private fun isNetworkAllowedForBackgroundUpdate(context: Context): Boolean {
-        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return true
-        val activeNetwork = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(activeNetwork) ?: return false
-        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
-            return false
-        }
-        if (ModuleSettings.isUpdateWifiOnly()) {
-            return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-        }
-        return true
     }
 
     suspend fun runBackgroundCheck(
@@ -323,78 +378,18 @@ object NightDogClient {
                     servicesFailed = results.count { it.second.exitCode != 0 }
                 }
 
-                var modules = AdbModuleManager.listModules(context)
-                val previousUpdates = _lastCheckReport.value?.updatesByModule.orEmpty()
-                val updatesMap = LinkedHashMap<String, UpdateResult>()
-                val autoUpdatedNames = mutableListOf<String>()
-
-                val isDue = forceUpdateCheck || (
-                    ModuleSettings.isUpdateCheckDue(now, onServerStart = onServerStart) &&
-                        isNetworkAllowedForBackgroundUpdate(context)
+                // Delegate update checks to ModuleUpdateScheduler when requested (manual or server start)
+                val updatesMap = if (forceUpdateCheck || onServerStart) {
+                    ModuleUpdateScheduler.checkUpdates(
+                        context = context,
+                        force = forceUpdateCheck,
+                        onServerStart = onServerStart
                     )
-
-                if (isDue && modules.isNotEmpty()) {
-                    val token = TokenStore.getToken(context)?.trim()?.takeIf { it.isNotEmpty() }
-                    val checker = UpdateChecker.getInstance()
-                    for (module in modules) {
-                        if (!forceUpdateCheck && ModuleSettings.isModuleUpdateIgnored(module.id)) {
-                            continue
-                        }
-                        val updateRes = runCatching {
-                            checker.checkUpdate(module, token)
-                        }.getOrNull()
-                        if (updateRes != null) {
-                            updatesMap[module.id] = updateRes
-                        }
-                    }
-                    ModuleSettings.setLastUpdateCheckTime(now)
-
-                    // Optional automatic background update via NightDog when enabled by user
-                    if (!forceUpdateCheck && ModuleSettings.isAutoUpdateEnabled()) {
-                        val installer = ModuleInstaller.getInstance()
-                        for (module in modules) {
-                            if (ModuleSettings.isModuleUpdateIgnored(module.id)) continue
-                            val upd = updatesMap[module.id] ?: continue
-                            if (!upd.hasUpdate) continue
-                            installer.updateModule(context, module, upd).onSuccess { updatedMod ->
-                                autoUpdatedNames += "${updatedMod.name} (${updatedMod.version ?: "new"})"
-                                updatesMap[module.id] = upd.copy(
-                                    hasUpdate = false,
-                                    currentVersion = updatedMod.version,
-                                    currentVersionCode = updatedMod.versionCode
-                                )
-                                if (serverAlive && updatedMod.enabled && updatedMod.hasService &&
-                                    ModuleSettings.canRunService(updatedMod) && ModuleSettings.canRunBackground(updatedMod)
-                                ) {
-                                    runCatching { AdbModuleManager.runService(updatedMod) }
-                                }
-                            }
-                        }
-                        if (autoUpdatedNames.isNotEmpty()) {
-                            modules = AdbModuleManager.listModules(context)
-                        }
-                    }
-
-                    if (ModuleSettings.isUpdateNotificationsEnabled()) {
-                        val pendingUpdates = updatesMap.filter { (id, res) ->
-                            res.hasUpdate && !ModuleSettings.isModuleUpdateIgnored(id)
-                        }
-                        if (autoUpdatedNames.isNotEmpty() || (!forceUpdateCheck && pendingUpdates.isNotEmpty())) {
-                            postUpdateNotification(
-                                context = context,
-                                autoUpdated = autoUpdatedNames,
-                                pendingCount = pendingUpdates.size
-                            )
-                        }
-                    }
                 } else {
-                    for (module in modules) {
-                        previousUpdates[module.id]?.let { cached ->
-                            updatesMap[module.id] = cached
-                        }
-                    }
+                    ModuleUpdateScheduler.updatesByModule.value
                 }
 
+                val modules = AdbModuleManager.listModules(context)
                 val healthMap = LinkedHashMap<String, ModuleHealthStatus>(modules.size)
                 for (module in modules) {
                     healthMap[module.id] = AdbModuleManager.inspectModuleHealth(module)
@@ -413,58 +408,13 @@ object NightDogClient {
                     servicesFailed = servicesFailed,
                     healthByModule = healthMap,
                     updatesByModule = updatesMap,
-                    autoUpdatedModules = autoUpdatedNames
+                    autoUpdatedModules = _lastCheckReport.value?.autoUpdatedModules.orEmpty()
                 )
                 _lastCheckReport.value = report
                 report
             } finally {
                 _isCheckingModules.value = false
             }
-        }
-    }
-
-    private fun postUpdateNotification(
-        context: Context,
-        autoUpdated: List<String>,
-        pendingCount: Int
-    ) {
-        runCatching {
-            val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    UPDATE_NOTIFICATION_CHANNEL_ID,
-                    context.getString(R.string.update_settings_notifications_channel),
-                    NotificationManager.IMPORTANCE_DEFAULT
-                )
-                nm.createNotificationChannel(channel)
-            }
-
-            val intent = Intent(context, ModulesActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
-            val pendingIntent = PendingIntent.getActivity(context, 0, intent, flags)
-
-            val title: String
-            val body: String
-            if (autoUpdated.isNotEmpty()) {
-                title = context.getString(R.string.modules_auto_updated_notification_title, autoUpdated.size)
-                body = autoUpdated.joinToString(", ")
-            } else {
-                title = context.getString(R.string.modules_updates_available_notification_title, pendingCount)
-                body = context.getString(R.string.modules_updates_available_notification_body)
-            }
-
-            val notification = NotificationCompat.Builder(context, UPDATE_NOTIFICATION_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_system_icon)
-                .setContentTitle(title)
-                .setContentText(body)
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .build()
-
-            nm.notify(UPDATE_NOTIFICATION_ID, notification)
         }
     }
 

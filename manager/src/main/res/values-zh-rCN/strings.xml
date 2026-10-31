@@ -171,8 +171,8 @@
     <string name="modules_background_actions_summary">允许已安装的模块在后台运行 service.sh 脚本</string>
     <string name="modules_background_allowed">允许后台</string>
     <string name="modules_background_blocked">禁止后台</string>
-    <string name="modules_background_check_title">后台模块检查（NightDog）</string>
-    <string name="modules_background_check_summary">在后台检查模块完整性、service.sh 状态和更新</string>
+    <string name="modules_background_check_title">后台模块检查</string>
+    <string name="modules_background_check_summary">通过 JobScheduler 安排后台更新检查，并通过 NightDog 验证模块完整性</string>
     <string name="modules_background_check_short">检查模块</string>
     <string name="modules_background_check_run_now">立即检查模块和服务器</string>
     <string name="modules_background_check_running">正在检查模块和服务器…</string>
@@ -276,7 +276,7 @@
     <string name="lab_features_summary">实验性功能</string>
     <string name="shizuku_connectors_title">Yozuku 连接器</string>
     <string name="shizuku_connectors_summary">允许插件激活 Yozuku</string>
-    <string name="nightdog_section_title">NightDog 与模块监控</string>
+    <string name="nightdog_section_title">NightDog 服务器监控</string>
     <string name="nightdog_title">NightDog 看门狗</string>
     <string name="nightdog_summary">监控服务器状态，并从卡死或系统服务停止中恢复</string>
     <string name="nightdog_description">NightDog 通过定期心跳监控服务器主线程，并使用 Binder linkToDeath 跟踪关键系统服务（package、activity、user、appops）。如果服务器卡死或失去关键绑定，NightDog 会终止卡住的进程，以便启动守护进程自动重启它。</string>
@@ -363,7 +363,7 @@
     <string name="update_settings_frequency_on_start">服务器启动时</string>
     <string name="update_settings_frequency_6h">每 6 小时</string>
     <string name="update_settings_auto_update">自动更新模块</string>
-    <string name="update_settings_auto_update_summary">通过 NightDog 在后台自动安装模块更新</string>
+    <string name="update_settings_auto_update_summary">通过 JobScheduler 检查更新，并通过 NightDog 以特权安装更新</string>
     <string name="update_settings_wifi_only">仅限 Wi-Fi / 不按流量计费的网络</string>
     <string name="update_settings_wifi_only_summary">仅在不按流量计费的网络上进行后台更新检查和自动更新</string>
     <string name="update_settings_notifications">更新通知</string>

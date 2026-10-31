@@ -29,8 +29,9 @@
 - ZIP モジュールをインストール・管理するための「ADB モジュール」画面（読み込みながらのサイズ制限と、分離したシェルでの実行）。
 - モジュール機能: `module.prop`、バナー、有効／無効スイッチ、`action.sh`、ポリシーで制御される `service.sh`、ローカル WebUI、削除、パスチェック、サイズ制限、出力制限、最終実行ログ。
 - モジュールのポリシー設定: セーフモード、フルアクセス、バックグラウンドアクションの制御。
-- オンラインのモジュールカタログ（GitHub Topics から検索）。ダウンロード数の表示と、長期間更新されていないモジュールの検出。
-- サーバーの状態を監視して復旧させる NightDog ウォッチドッグ（重要なプラットフォームのサービスと、任意のサービスを監視）。
+- オンラインのモジュールカタログ（GitHub Topics から検索）。ダウンロード数の表示、横幅いっぱいのカード、`JobScheduler`（`ModuleUpdateScheduler`）によるバックグラウンドでのアップデートの確認。
+- フォーク対策のホストの証明（`verifyNightzukuHost` の IPC と `nightzuku-guard.sh` / `nightzuku-guard.js`）。Nightzuku 向けのモジュールが、不完全なサードパーティのフォークを見分けて実行を止められます（Yozuku はパッケージ ID を変えていないので確認を通ります。詳しくは [ADB モジュール API](docs/adb-modules-api.md)）。
+- NightDog ウォッチドッグ。サーバーの状態の監視、システムサービスの復旧、インストール済みのモジュールの整合性の確認、特権が必要なアップデートの適用を行います。
 - デバッグ用テストモジュール（`test-modules/adb-test-module.zip`）。
 
 ## 2 系統のアーキテクチャと移行
@@ -55,8 +56,7 @@ Yozuku は、従来の Shizuku の経路と並行して、スタブを必要と�
 - [Wear OS 互換性](docs/wearos-compatibility.md)
 - [Wear OS ペア設定ガイド](docs/wearos-pairing.md)
 - [Android TV サポート](docs/android-tv-support.md)
-- [NightDog ウォッチドッグ](docs/nightdog.md)
-- [NightDog によるバックグラウンドの処理とモジュールのアップデート](docs/nightdog-updates.md)
+- [NightDog とバックグラウンドでのモジュールのアップデート](docs/nightdog.md)
 - [GitHub カタログ](docs/github-catalog.md)
 
 ## 背景

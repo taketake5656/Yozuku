@@ -174,8 +174,8 @@
     <string name="modules_background_actions_summary">Дозволити встановленим модулям запускати фонові скрипти service.sh</string>
     <string name="modules_background_allowed">Фонова робота дозволена</string>
     <string name="modules_background_blocked">Фонова робота заблокована</string>
-    <string name="modules_background_check_title">Фонова перевірка модулів (NightDog)</string>
-    <string name="modules_background_check_summary">Перевіряти цілісність модулів, стан service.sh і оновлення у фоні</string>
+    <string name="modules_background_check_title">Фонова перевірка модулів</string>
+    <string name="modules_background_check_summary">Планувати фонову перевірку оновлень через JobScheduler і перевіряти цілісність модулів через NightDog</string>
     <string name="modules_background_check_short">Перевірити модулі</string>
     <string name="modules_background_check_run_now">Перевірити модулі та сервер зараз</string>
     <string name="modules_background_check_running">Перевірка модулів і сервера…</string>
@@ -279,7 +279,7 @@
     <string name="lab_features_summary">Експериментальні можливості</string>
     <string name="shizuku_connectors_title">Конектори Yozuku</string>
     <string name="shizuku_connectors_summary">Дозволити плагінам активувати Yozuku</string>
-    <string name="nightdog_section_title">NightDog і фонова перевірка модулів</string>
+    <string name="nightdog_section_title">Сторожовий таймер сервера NightDog</string>
     <string name="nightdog_title">NightDog (бета)</string>
     <string name="nightdog_summary">Легкий системний монітор з нульовим споживанням енергії</string>
     <string name="nightdog_description">NightDog відстежує стан сервера за допомогою inotify (без опитування). Працює як shell-процес.</string>
@@ -366,7 +366,7 @@
     <string name="update_settings_frequency_on_start">Під час запуску сервера</string>
     <string name="update_settings_frequency_6h">Кожні 6 годин</string>
     <string name="update_settings_auto_update">Автооновлення модулів</string>
-    <string name="update_settings_auto_update_summary">Автоматично встановлювати оновлення модулів у фоні через NightDog</string>
+    <string name="update_settings_auto_update_summary">Перевіряти оновлення через JobScheduler і встановлювати їх із привілеями через NightDog</string>
     <string name="update_settings_wifi_only">Лише Wi-Fi (безлімітна мережа)</string>
     <string name="update_settings_wifi_only_summary">Перевіряти та завантажувати оновлення у фоні лише в безлімітних мережах</string>
     <string name="update_settings_notifications">Сповіщення про оновлення</string>

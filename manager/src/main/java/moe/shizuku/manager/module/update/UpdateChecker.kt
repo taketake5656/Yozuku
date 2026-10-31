@@ -1,12 +1,13 @@
 package moe.shizuku.manager.module.update
 
 import android.util.Log
-import moe.shizuku.manager.module.AdbModule
-import moe.shizuku.manager.module.discovery.RateLimitTracker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import moe.shizuku.manager.module.AdbModule
+import moe.shizuku.manager.module.ModuleRuntimeUtils
+import moe.shizuku.manager.module.discovery.RateLimitTracker
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -47,24 +48,11 @@ class UpdateChecker private constructor() {
             }
         }
 
-    private fun readModuleProp(module: AdbModule): Map<String, String> {
-        return readPropsFile(module.directory.resolve("module.prop"))
-    }
+    private fun readModuleProp(module: AdbModule): Map<String, String> =
+        ModuleRuntimeUtils.readPropsFile(module.directory.resolve("module.prop"))
 
-    private fun readSourceProp(module: AdbModule): Map<String, String> {
-        return readPropsFile(module.directory.resolve(".source.prop"))
-    }
-
-    private fun readPropsFile(propsFile: java.io.File): Map<String, String> {
-        if (!propsFile.isFile) return emptyMap()
-        return propsFile.readText().lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
-            .associate {
-                val index = it.indexOf('=')
-                it.substring(0, index).trim() to it.substring(index + 1).trim()
-            }
-    }
+    private fun readSourceProp(module: AdbModule): Map<String, String> =
+        ModuleRuntimeUtils.readPropsFile(module.directory.resolve(".source.prop"))
 
     fun resolveOwnerAndRepo(module: AdbModule): Triple<String, String, String?>? {
         val sourceProps = readSourceProp(module)
@@ -246,13 +234,7 @@ class UpdateChecker private constructor() {
                 client.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) return@use
                     val text = resp.body?.string() ?: return@use
-                    val remoteProps = text.lineSequence()
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
-                        .associate {
-                            val idx = it.indexOf('=')
-                            it.substring(0, idx).trim() to it.substring(idx + 1).trim()
-                        }
+                    val remoteProps = ModuleRuntimeUtils.parseProps(text)
                     val remoteVersion = remoteProps["version"]?.takeIf { it.isNotBlank() }
                     val remoteVersionCode = remoteProps["versionCode"]?.toLongOrNull()
                     val currentVersionCode = module.versionCode

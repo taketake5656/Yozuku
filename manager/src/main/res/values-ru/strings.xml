@@ -173,8 +173,8 @@
     <string name="modules_background_actions_summary">Позволить установленным модулям запускать фоновые сервисы (service.sh)</string>
     <string name="modules_background_allowed">Фон разрешён</string>
     <string name="modules_background_blocked">Фон заблокирован</string>
-    <string name="modules_background_check_title">Фоновая проверка модулей (NightDog)</string>
-    <string name="modules_background_check_summary">Проверка целостности модулей, статуса service.sh и обновлений в фоне</string>
+    <string name="modules_background_check_title">Фоновая проверка модулей</string>
+    <string name="modules_background_check_summary">Фоновая проверка обновлений через JobScheduler и контроль целостности через NightDog</string>
     <string name="modules_background_check_short">Проверить</string>
     <string name="modules_background_check_run_now">Проверить модули и сервер сейчас</string>
     <string name="modules_background_check_running">Проверка модулей и сервера…</string>
@@ -278,7 +278,7 @@
     <string name="lab_features_summary">Экспериментальные возможности</string>
     <string name="shizuku_connectors_title">Подключатели Yozuku</string>
     <string name="shizuku_connectors_summary">Разрешить плагинам активировать Yozuku</string>
-    <string name="nightdog_section_title">NightDog и фоновая проверка модулей</string>
+    <string name="nightdog_section_title">Сторожевой таймер сервера NightDog</string>
     <string name="nightdog_title">Сторожевой таймер NightDog</string>
     <string name="nightdog_summary">Мониторинг здоровья сервера и автовосстановление при зависаниях</string>
     <string name="nightdog_description">NightDog отслеживает отзывчивость главного потока сервера через периодические сигналы (heartbeat) и состояние критических системных служб (package, activity, user, appops) через Binder linkToDeath. При зависании сервера или потере служб NightDog перезапускает процесс через загрузчик.</string>
@@ -365,7 +365,7 @@
     <string name="update_settings_frequency_on_start">При запуске сервера</string>
     <string name="update_settings_frequency_6h">Каждые 6 часов</string>
     <string name="update_settings_auto_update">Автообновление модулей</string>
-    <string name="update_settings_auto_update_summary">Автоматически устанавливать обновления модулей в фоне через NightDog</string>
+    <string name="update_settings_auto_update_summary">Проверка обновлений через JobScheduler и привилегированная установка через NightDog</string>
     <string name="update_settings_wifi_only">Только по Wi-Fi (безлимитная сеть)</string>
     <string name="update_settings_wifi_only_summary">Проверять и скачивать обновления в фоне только в безлимитных сетях</string>
     <string name="update_settings_notifications">Уведомления об обновлениях</string>

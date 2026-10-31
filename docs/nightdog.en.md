@@ -1,88 +1,83 @@
-# NightDog & Background Module Check
+# NightDog & Background Module Update Architecture
 
 [日本語](nightdog.md) | **English**
 
-NightDog is the built-in watchdog for the Yozuku server process (`shizuku_server`) and the unified coordinator for background module health, `service.sh` execution, and update checks in the Yozuku Manager.
+Yozuku splits background supervision into two specialized components so privileged process monitoring never wastes cycles on unprivileged network polling:
 
-## How it works
+1. **NightDog (`NightDog` + `NightDogClient`)** — Privileged server watchdog, local module integrity inspector, `service.sh` supervisor, and privileged update installer.
+2. **`ModuleUpdateScheduler` (`JobScheduler` / `ModuleUpdateJobService`)** — OS-scheduled, network-constrained background update checker for ADB modules.
 
-1. **Main-thread heartbeat monitoring**:
-   - When enabled, `ShizukuService` posts a heartbeat (`NightDog.beat()`) on its main looper thread every 5 seconds.
-   - `NightDog.start()` records an initial baseline timestamp immediately so a freeze before the first scheduled beat is still caught.
-   - A dedicated daemon `HandlerThread` (`nightdog`) checks heartbeat freshness dynamically against the configured timeout (`60s`), scheduling follow-up checks at `min(pollInterval, remainingTimeout)` so stalls are detected promptly at the timeout boundary rather than up to `2x` timeout.
-   - Before killing a stalled server process (`Process.killProcess(Process.myPid())`), NightDog captures and logs the main looper thread's stack trace to aid debugging.
+## Why `JobScheduler` + `NightDog` Instead of Polling Inside `NightDogClient`
 
-2. **System service death & recovery monitoring**:
-   - NightDog registers `IBinder.linkToDeath` recipients on four critical system services (`package`, `activity`, `user`, `appops`) and optional `permissionmgr`.
-   - Each health-check cycle also performs a fallback `pingBinder()` check and properly unlinks stale death recipients before rebinding.
-   - When a service dies or becomes unresponsive, NightDog deduplicates pending rebinds per service and retries with exponential backoff (`5s`, `10s`, `20s`, `40s`, `60s`, up to 10 attempts), verifying that the replacement binder is alive (`pingBinder()`) before accepting it.
-   - When a service recovers (`NightDog.Listener.onServiceRecovered`), `ShizukuService` invalidates cached `Android17Compat` proxy handles (`package` / `permissionmgr`), re-registers `BinderSender` process/UID observers (if `activity` restarted), and re-dispatches binders to the manager and client apps.
-   - If a critical service cannot be recovered after all 10 attempts, NightDog terminates the server process so the starter daemon can respawn it and wait for system services cleanly.
+- **Separation of privileges**: Checking GitHub Releases or raw `module.prop` over HTTPS requires zero ADB/root privileges and depends on network state (unmetered Wi-Fi vs cellular, Doze window batching). `ModuleUpdateScheduler` delegates periodic polling to Android's system `JobScheduler` (`ModuleUpdateJobService`, job ID `40921`), which enforces `NETWORK_TYPE_UNMETERED` / `NETWORK_TYPE_ANY`, survives app process death without keeping a 15-minute coroutine loop alive, and adds zero third-party library bloat (`androidx.work` / `Room` are not required).
+- **Privileged execution handoff**: When `ModuleUpdateScheduler` detects available updates and `Auto-update modules` is enabled, it hands the verified update targets to `NightDogClient.applyUpdates()`. If `shizuku_server` is active (`Shizuku.pingBinder()`), `NightDogClient` atomically backs up and installs each module, then re-executes `service.sh` with root/ADB privileges. If the server is offline during a background job, `NightDogClient` queues the pending updates and applies them automatically as soon as `OnBinderReceivedListener` fires.
 
-3. **Unified Background Module Check (`NightDogClient`)**:
-   - `NightDogClient` registers both `OnBinderReceivedListener` and `OnBinderDeadListener` globally in `ShizukuApplication`:
-     - When `shizuku_server` binder dies, `NightDogClient` resets `AdbModuleManager`'s service run guard so `service.sh` scripts will be re-executed automatically once the server recovers.
-     - When the server binder is received (on boot, manual start, or NightDog recovery), and periodically every 15 minutes while background checking is enabled, `NightDogClient` runs `runBackgroundCheck()`:
-       1. Queries real-time server watchdog telemetry via `BINDER_TRANSACTION_getNightDogStatus` (`10005`): bound system services, total rebinds, heartbeat count, and uptime.
-       2. Cleans up stale `.installing` staging directories in `adb_modules`.
-       3. Executes enabled module `service.sh` scripts (`AdbModuleManager.runEnabledServicesIfAllowed`) when background actions (`allowBackgroundActions`) are permitted.
-       4. Inspects every installed module's integrity (`AdbModuleManager.inspectModuleHealth`): `module.prop`, executable script permissions, `action.sh`/`service.sh` size and non-zero exit codes in `logs/service-last.log`, and WebUI `index.html`.
-       5. Checks installed modules for updates via `UpdateChecker` according to the configured schedule (`DAILY` / `WEEKLY`) or on manual trigger.
+## How It Works
+
+### 1. Server Watchdog (`NightDog` inside `shizuku_server`)
+
+- **Main-thread heartbeat monitoring**:
+  - When enabled, `ShizukuService` posts `NightDog.beat()` on its main looper thread every 5 seconds.
+  - `NightDog.start()` records an initial baseline timestamp immediately so a freeze before the first scheduled beat is still caught.
+  - A dedicated daemon `HandlerThread` (`nightdog`) checks heartbeat freshness dynamically against the configured timeout (`60s`), scheduling follow-up checks at `min(pollInterval, remainingTimeout)` so stalls are detected at the exact timeout boundary rather than up to `2x` timeout.
+  - Before terminating a stalled server process (`Process.killProcess(Process.myPid())`), NightDog logs the main looper thread's stack trace.
+- **System service death & recovery monitoring**:
+  - Registers `IBinder.linkToDeath` recipients on four critical system services (`package`, `activity`, `user`, `appops`) and optional `permissionmgr`.
+  - Performs fallback `pingBinder()` checks and unlinks stale death recipients before rebinding.
+  - Retries dead services with exponential backoff (`5s`, `10s`, `20s`, `40s`, `60s`, up to 10 attempts), verifying replacement binders via `pingBinder()`.
+  - When a service recovers (`NightDog.Listener.onServiceRecovered`), `ShizukuService` invalidates cached `Android17Compat` proxy handles, re-registers `BinderSender` UID/process observers, and re-dispatches binders to the manager and client apps.
+  - If a critical service cannot be recovered after 10 attempts, NightDog terminates `shizuku_server` so the native `starter` supervisor respawns it cleanly.
+
+### 2. Privileged Module Supervisor (`NightDogClient`)
+
+- Registers global `OnBinderReceivedListener` and `OnBinderDeadListener` callbacks in `ShizukuApplication`:
+  - **On binder death**: Resets `AdbModuleManager`'s service run guard so `service.sh` scripts re-run automatically when the server restarts.
+  - **On binder received**:
+    1. Queries server watchdog telemetry via `BINDER_TRANSACTION_getNightDogStatus` (`10005`): bound system services, total rebinds, heartbeat count, and uptime.
+    2. Cleans up stale `.installing` staging directories in `adb_modules`.
+    3. Executes enabled module `service.sh` scripts (`AdbModuleManager.runEnabledServicesIfAllowed`) when background actions (`allowBackgroundActions`) are permitted.
+    4. Inspects installed module integrity (`AdbModuleManager.inspectModuleHealth`): `module.prop`, executable `.sh` permissions, `action.sh`/`service.sh` size, non-zero exit codes in `logs/service-last.log`, and WebUI `index.html`.
+    5. Applies any queued auto-updates (`applyPendingAutoUpdatesIfReady`) or triggers `ModuleUpdateScheduler.onServerStarted()` when update frequency is set to `ON_START`.
+
+### 3. Background Module Update Checker (`ModuleUpdateScheduler` & `ModuleUpdateJobService`)
+
+- Synchronizes an OS `JobInfo` schedule whenever update settings change (`ModuleUpdateScheduler.syncSchedule()`):
+  - **Frequencies**: `NEVER` (manual only), `ON_START` (runs when `shizuku_server` starts), `EVERY_6_HOURS`, `DAILY` (default), `WEEKLY`.
+  - **Network constraints**: Enforces `JobInfo.NETWORK_TYPE_UNMETERED` when `Wi-Fi / unmetered network only` is enabled, or `JobInfo.NETWORK_TYPE_ANY` otherwise, plus a direct `ConnectivityManager` check for immediate/manual runs.
+- **Per-module version pinning (`Freeze version`)**: Modules pinned by the user are skipped during update checks and batch updates.
+- **Atomic backup & rollback (`AdbModuleManager`)**: Before replacing an existing module directory during an update, Yozuku moves the previous version to `<id>.backup`, preserves `.source.prop` and the `disable` state, and rolls back automatically if extraction or validation fails.
 
 ## UI Controls
 
-NightDog and Background Module Check are exposed across Phone, Android TV, and Wear OS:
-
 - **Settings -> Lab Features** (`LabFeaturesActivity`, `TvLabMenuScreen`):
-  - Toggle **NightDog Watchdog** (`BINDER_TRANSACTION_setNightDogEnabled` / `BINDER_TRANSACTION_getNightDogEnabled`).
-  - Toggle **Background module check (NightDog)** (`ModuleSettings.isBackgroundCheckEnabled()`).
-  - Toggle **Allow background actions (`service.sh`)** (`ModuleSettings.allowBackgroundActions()`).
-  - Live telemetry & manual check button (**Run module & server check now**).
+  - Dedicated solely to **NightDog Server Watchdog** toggle and live server telemetry (`boundServices`, `rebindCount`, `heartbeatCount`, `uptimeSeconds`). Duplicated module switches have been removed from Lab Features.
 - **Settings -> Modules -> Update & Check Settings** (`SettingsActivity`, `UpdateSettingsScreen`, `TvSettingsScreen`, `WearSettingsScreen`):
-  - Full control over background module actions, background checks, update check cadence (`Manual`, `Daily`, `Weekly`), default install mode (`Sources` vs `Release ZIP`), and GitHub PAT.
-- **ADB Modules screen** (`ModulesActivity`, `TvModulesScreen`, `WearModulesScreen`):
-  - Top NightDog module check banner with quick check button and background actions switch.
-  - Per-module health badges (`Healthy` / script exit code issues), background policy badges (`Background allowed` / `Background blocked`), update badges (`Update: vX.Y`), and one-tap **Update** button via `ModuleInstaller.updateModule()`.
+  - Central configuration for background module checks, update frequency (`Never`, `On server start`, `Every 6 hours`, `Daily`, `Weekly`), auto-update toggle, Wi-Fi-only constraint, update notifications, default install mode (`Sources` vs `Release ZIP`), Module Catalog toggle, and GitHub PAT.
+- **ADB Modules Screen** (`ModulesActivity`, `TvModulesScreen`, `WearModulesScreen`):
+  - Top status banner with manual check trigger, **Update all (N)** batch progress bar, and background actions switch.
+  - Per-module health badges, update badges (`Update: vX.Y`), changelog & install-mode dialog, and version freeze (`Updates frozen`).
 
-## Starter recovery behavior
-
-When `shizuku_server` is launched or exits abnormally / is killed by NightDog:
-
-- The native `starter` (`rust/starter/src/main.rs`) ignores `SIGPIPE` and `SIGHUP` (`SIG_IGN`) so closing the launching ADB/root shell cannot kill the background supervisor or trigger broken-pipe terminations, while restoring `SIG_DFL` inside the spawned `shizuku_server` child before `execvp`.
-- Before spawning a new supervisor, `starter` terminates both stale `shizuku_server` instances and any lingering previous `starter` supervisor processes (matched via `/proc/<pid>/exe`) so duplicate supervisors never race each other.
-- `starter` forks a detached background supervisor (`setsid`, `/dev/null` stdio) and communicates the initial `shizuku_server` PID over a pipe so the foreground starter process immediately prints `info: shizuku_server pid is <pid>` and `info: shizuku_starter exit with 0` and exits cleanly without blocking `StarterActivity` or wireless ADB sessions.
-- The detached supervisor waits on `shizuku_server` via `waitpid` (retrying on `EINTR`), logs lifecycle events to Android logcat (`Shizuku` tag), and waits 5 seconds before respawning `shizuku_server` on abnormal exit.
-- Rapid crash loops are capped at 5 consecutive restarts (`max_restarts = 5`).
-- If `shizuku_server` runs stably for at least 60 seconds (`STABLE_UPTIME_RESET_SECS`), the consecutive crash counter resets to `0`, allowing NightDog to recover the server across multi-day uptimes without exhausting the retry budget.
-- Clean exits (`0`) and manager-uninstalled exits (`50` / `MANAGER_APP_NOT_FOUND`) stop the starter without restarting.
-
-## Configuration
+## Configuration Summary
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| Heartbeat interval | 5 s | Main thread heartbeat cadence |
-| Heartbeat timeout | 60 s | Maximum allowed time without a heartbeat before process termination |
-| Poll interval | 60 s | Maximum interval between fallback `pingBinder()` checks |
-| Initial rebind delay | 2 s | Delay before first rebind attempt after service death |
-| Backoff range | 5 s – 60 s | Exponential backoff delay between failed rebind attempts |
-| Max rebind attempts | 10 | Maximum attempts before terminating server for starter recovery |
-| Stable uptime reset | 60 s | Server uptime threshold that resets starter's consecutive crash counter |
-| Background module check interval | 15 min | Periodic module health & due-update check cadence in `NightDogClient` |
+| Heartbeat interval | 5 s | `shizuku_server` main thread heartbeat cadence |
+| Heartbeat timeout | 60 s | Max time without heartbeat before server termination |
+| Poll interval | 60 s | Max interval between fallback `pingBinder()` checks |
+| Rebind backoff | 5 s – 60 s | Exponential backoff delay between failed service rebinds |
+| Max rebind attempts | 10 | Max attempts before terminating server for starter recovery |
+| Stable uptime reset | 60 s | Server uptime threshold that resets starter's crash counter |
+| Update check scheduler | `JobScheduler` | OS-managed periodic job (`JOB_ID = 40921`) with network constraints |
+| Default update cadence | `DAILY` (24h) | Configurable to `NEVER`, `ON_START`, `6h`, `24h`, or `168h` |
 
-## Files
+## Key Files
 
 - `nightdog/src/main/java/rikka/shizuku/nightdog/NightDog.kt`
 - `server/src/main/java/rikka/shizuku/server/ShizukuService.kt`
-- `server/src/main/java/rikka/shizuku/server/ServerConstants.kt`
-- `server/src/main/java/rikka/shizuku/server/ShizukuConfigManager.kt`
-- `server/src/main/java/rikka/shizuku/server/BinderSender.kt`
 - `rust/starter/src/main.rs`
 - `manager/src/main/java/moe/shizuku/manager/nightdog/NightDogClient.kt`
-- `manager/src/main/java/moe/shizuku/manager/module/AdbModuleManager.kt`
-- `manager/src/main/java/moe/shizuku/manager/module/ModuleSettings.kt`
-- `manager/src/main/java/moe/shizuku/manager/module/ModulesActivity.kt`
+- `manager/src/main/java/moe/shizuku/manager/module/update/ModuleUpdateScheduler.kt`
+- `manager/src/main/java/moe/shizuku/manager/module/update/UpdateChecker.kt`
+- `manager/src/main/java/moe/shizuku/manager/module/update/ModuleInstaller.kt`
 - `manager/src/main/java/moe/shizuku/manager/module/update/UpdateSettingsScreen.kt`
-- `manager/src/main/java/moe/shizuku/manager/settings/LabFeaturesActivity.kt`
-- `manager/src/main/java/moe/shizuku/manager/settings/TvLabMenuScreen.kt`
-
-See also: [NightDog background work and module updates](nightdog-updates.en.md)
+- `manager/src/main/java/moe/shizuku/manager/module/ModuleRuntimeUtils.kt`

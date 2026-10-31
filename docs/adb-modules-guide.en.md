@@ -18,10 +18,10 @@ the active Yozuku server.
 
 This is a real module runner, not a visual stub. It installs ZIPs, parses metadata,
 stores module files, runs shell scripts through Yozuku, opens local WebUI, tracks enabled
-state, deletes modules, and writes last-run logs.
+state, checks for updates via `JobScheduler`, and writes last-run logs.
 
 It is not a Magisk/KSU systemless overlay implementation. There are no mount hooks,
-no `/data/adb/modules` compatibility promise, and no long-running daemon supervisor yet.
+no `/data/adb/modules` compatibility promise, and no long-running daemon supervisor.
 
 ## Minimal Module
 
@@ -30,8 +30,10 @@ Create this structure:
 ```text
 my-module/
 ├── module.prop
+├── nightzuku-guard.sh
 ├── action.sh
 └── webui/
+    ├── nightzuku-guard.js
     └── index.html
 ```
 
@@ -44,12 +46,19 @@ version=1.0
 versionCode=1
 author=Author
 description=Short module description
+usesShellBridge=true
+requireNightzuku=true
+minNightzukuApi=1
+minNightzukuVersion=13
 ```
 
 `action.sh`:
 
 ```sh
 #!/system/bin/sh
+MODDIR="${MODDIR:-${0%/*}}"
+[ -f "$MODDIR/nightzuku-guard.sh" ] && . "$MODDIR/nightzuku-guard.sh"
+
 echo "module=$SHIZUKU_MODULE_ID"
 echo "mode=$SHIZUKU_MODULE_MODE"
 id
@@ -63,6 +72,25 @@ zip -r ../my-module.zip .
 ```
 
 Install `my-module.zip` from the ADB Modules screen.
+
+## Protecting Your Module Against Broken Forks (`nightzuku-guard`)
+
+If an unofficial fork copies Nightzuku's module manager UI without implementing the native `kerneldroid.nightzuku.INightService` runtime or full WebUI bridge, your module may fail silently or behave unpredictably, leading users of that fork to report false bugs to you.
+
+To block execution on incompatible forks:
+
+1. Copy `test-modules/adb-test-module/nightzuku-guard.sh` into your module root and source it at the top of `action.sh` and `service.sh`:
+   ```sh
+   MODDIR="${MODDIR:-${0%/*}}"
+   [ -f "$MODDIR/nightzuku-guard.sh" ] && . "$MODDIR/nightzuku-guard.sh"
+   ```
+2. Copy `test-modules/adb-test-module/webui/nightzuku-guard.js` into your `webui/` folder and load it first in `webui/index.html`:
+   ```html
+   <script src="nightzuku-guard.js"></script>
+   ```
+3. Set `requireNightzuku=true` and `minNightzukuApi=1` in `module.prop`.
+
+When run inside genuine Nightzuku, `nightzuku-guard` verifies the `kerneldroid.nightzuku` package path, `.nightzuku_env` HMAC token, and live `verifyNightzukuHost` ContentProvider / JS bridge challenge in a few milliseconds. On any unofficial fork, it aborts immediately with a clear message telling the user that their manager app is an unsupported fork and not to report the error to the module author.
 
 ## Optional Files
 
@@ -93,7 +121,7 @@ usesShellBridge=true
 action=scripts/action.sh
 ```
 
-`usesShellBridge=true` is mandatory for WebUI pages that need `window.Shizuku`.
+`usesShellBridge=true` is mandatory for WebUI pages that need `window.Nightzuku` / `window.Shizuku`.
 
 ## Script Environment
 
@@ -106,6 +134,11 @@ SHIZUKU_MODULE_ID=<id>
 SHIZUKU_MODULE_MODE=safe|custom|full
 SHIZUKU_MODULE_TRUSTED=0|1
 SHIZUKU_MODULE_BACKGROUND=0|1
+NIGHTZUKU_HOST=1
+NIGHTZUKU_HOST_PKG=kerneldroid.nightzuku
+NIGHTZUKU_MODULES_API=2
+NIGHTZUKU_BINDER_DESCRIPTOR=kerneldroid.nightzuku.INightService
+NIGHTZUKU_SESSION_TOKEN=<64-char HMAC token>
 ```
 
 Do not hardcode Magisk/KSU paths. Use `$MODDIR`.
@@ -116,11 +149,11 @@ Use `action.sh` for user-triggered commands.
 
 Use `service.sh` for background setup. It runs when:
 - The module is enabled.
-- Access mode is Full, or Custom with Service enabled.
+- Access mode is Full, or Custom with Service enabled (or Full Trust is enabled for the module).
 - Background actions are enabled in Settings.
 - Yozuku binder is available.
 
-The manager auto-runs enabled services once per binder session.
+`NightDogClient` auto-runs enabled services once per binder session and after auto-updates.
 
 ## Full Trust
 
@@ -155,4 +188,4 @@ The repository includes:
 test-modules/adb-test-module.zip
 ```
 
-Use it to verify install, enable/disable, Action, Service, WebUI, and banner rendering.
+Use it to verify install, enable/disable, Action, Service, WebUI, anti-fork host attestation (`nightzuku-guard.sh` / `nightzuku-guard.js`), and banner rendering.

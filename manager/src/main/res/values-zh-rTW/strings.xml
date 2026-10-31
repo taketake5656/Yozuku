@@ -171,8 +171,8 @@
     <string name="modules_background_actions_summary">允許已安裝的模組在背景執行 service.sh 指令碼</string>
     <string name="modules_background_allowed">允許背景</string>
     <string name="modules_background_blocked">封鎖背景</string>
-    <string name="modules_background_check_title">背景模組檢查（NightDog）</string>
-    <string name="modules_background_check_summary">在背景檢查模組完整性、service.sh 狀態和更新</string>
+    <string name="modules_background_check_title">背景模組檢查</string>
+    <string name="modules_background_check_summary">透過 JobScheduler 排程背景更新檢查，並透過 NightDog 驗證模組完整性</string>
     <string name="modules_background_check_short">檢查模組</string>
     <string name="modules_background_check_run_now">立即檢查模組和伺服器</string>
     <string name="modules_background_check_running">正在檢查模組和伺服器…</string>
@@ -276,7 +276,7 @@
     <string name="lab_features_summary">實驗性功能</string>
     <string name="shizuku_connectors_title">Yozuku 連接器</string>
     <string name="shizuku_connectors_summary">允許外掛程式啟動 Yozuku</string>
-    <string name="nightdog_section_title">NightDog 與模組監控</string>
+    <string name="nightdog_section_title">NightDog 伺服器監控</string>
     <string name="nightdog_title">NightDog 監控程式</string>
     <string name="nightdog_summary">監控伺服器狀態，並從停止回應或系統服務停止中復原</string>
     <string name="nightdog_description">NightDog 會透過定期心跳監控伺服器主執行緒，並使用 Binder linkToDeath 追蹤重要的系統服務（package、activity、user、appops）。如果伺服器停止回應或失去重要的繫結，NightDog 會終止卡住的程序，讓啟動常駐程式自動重新啟動它。</string>
@@ -363,7 +363,7 @@
     <string name="update_settings_frequency_on_start">伺服器啟動時</string>
     <string name="update_settings_frequency_6h">每 6 小時</string>
     <string name="update_settings_auto_update">自動更新模組</string>
-    <string name="update_settings_auto_update_summary">透過 NightDog 在背景自動安裝模組更新</string>
+    <string name="update_settings_auto_update_summary">透過 JobScheduler 檢查更新，並透過 NightDog 以特權安裝更新</string>
     <string name="update_settings_wifi_only">僅限 Wi-Fi / 非計量付費網路</string>
     <string name="update_settings_wifi_only_summary">僅在非計量付費網路上進行背景更新檢查和自動更新</string>
     <string name="update_settings_notifications">更新通知</string>

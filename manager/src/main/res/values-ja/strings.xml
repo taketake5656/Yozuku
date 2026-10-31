@@ -171,8 +171,8 @@
     <string name="modules_background_actions_summary">インストール済みモジュールが、バックグラウンドで service.sh を実行することを許可します</string>
     <string name="modules_background_allowed">バックグラウンド許可</string>
     <string name="modules_background_blocked">バックグラウンド禁止</string>
-    <string name="modules_background_check_title">バックグラウンドでのモジュールの確認（NightDog）</string>
-    <string name="modules_background_check_summary">モジュールの整合性、service.sh の状態、アップデートをバックグラウンドで確認します</string>
+    <string name="modules_background_check_title">バックグラウンドでのモジュールの確認</string>
+    <string name="modules_background_check_summary">JobScheduler でアップデートの確認を予約し、NightDog でモジュールの整合性を確認します</string>
     <string name="modules_background_check_short">モジュールを確認</string>
     <string name="modules_background_check_run_now">モジュールとサーバーを今すぐ確認</string>
     <string name="modules_background_check_running">モジュールとサーバーを確認しています…</string>
@@ -276,7 +276,7 @@
     <string name="lab_features_summary">実験的な機能</string>
     <string name="shizuku_connectors_title">Yozuku コネクタ</string>
     <string name="shizuku_connectors_summary">プラグインによる Yozuku の起動を許可します</string>
-    <string name="nightdog_section_title">NightDog とモジュールの監視</string>
+    <string name="nightdog_section_title">NightDog サーバーのウォッチドッグ</string>
     <string name="nightdog_title">NightDog ウォッチドッグ</string>
     <string name="nightdog_summary">サーバーの状態を監視し、応答停止やシステムサービスの停止から復旧します</string>
     <string name="nightdog_description">NightDog は、定期的なハートビートでサーバーのメインスレッドを監視し、重要なシステムサービス（package、activity、user、appops）を Binder の linkToDeath で追跡します。サーバーが応答しなくなったり、重要なサービスとの接続が失われたりすると、NightDog が停止したプロセスを終了させ、スターターデーモンが自動で再起動できるようにします。</string>
@@ -363,7 +363,7 @@
     <string name="update_settings_frequency_on_start">サーバーの起動時</string>
     <string name="update_settings_frequency_6h">6 時間ごと</string>
     <string name="update_settings_auto_update">モジュールを自動でアップデート</string>
-    <string name="update_settings_auto_update_summary">NightDog を使って、モジュールのアップデートをバックグラウンドで自動インストールします</string>
+    <string name="update_settings_auto_update_summary">JobScheduler でアップデートを確認し、NightDog を使って特権でインストールします</string>
     <string name="update_settings_wifi_only">Wi-Fi / 従量制でないネットワークのみ</string>
     <string name="update_settings_wifi_only_summary">バックグラウンドでのアップデートの確認と自動アップデートは、従量制でないネットワークでのみ行います</string>
     <string name="update_settings_notifications">アップデートの通知</string>
