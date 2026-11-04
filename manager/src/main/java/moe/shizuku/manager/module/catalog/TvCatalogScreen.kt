@@ -129,7 +129,10 @@ fun TvCatalogScreen(
             result.onSuccess {
                 installResult = Pair(module.moduleName, true)
             }.onFailure {
-                installResult = Pair(it.message ?: "Install failed", false)
+                installResult = Pair(
+                    context.getString(R.string.modules_catalog_install_failed, it.message ?: it.javaClass.simpleName),
+                    false
+                )
             }
         }
     }
@@ -242,7 +245,7 @@ fun TvCatalogScreen(
             AlertDialog(
                 onDismissRequest = {
                     showTokenDialog = false
-                    if (tokenInput.isBlank()) onNavigateUp()
+                    if (TokenStore.getToken(context).isNullOrBlank()) onNavigateUp()
                 },
                 title = { TvText(stringResource(R.string.modules_catalog_token_required)) },
                 text = {
@@ -272,7 +275,7 @@ fun TvCatalogScreen(
                 confirmButton = {
                     TvSurface(
                         onClick = {
-                            TokenStore.setToken(context, tokenInput)
+                            TokenStore.setToken(context, tokenInput.trim())
                             showTokenDialog = false
                             scope.launch {
                                 isLoading = true
@@ -298,7 +301,10 @@ fun TvCatalogScreen(
                 },
                 dismissButton = {
                     TvSurface(
-                        onClick = { showTokenDialog = false },
+                        onClick = {
+                            showTokenDialog = false
+                            if (TokenStore.getToken(context).isNullOrBlank()) onNavigateUp()
+                        },
                         shape = TvClickableSurfaceDefaults.shape(TvMaterialTheme.shapes.small),
                         colors = TvClickableSurfaceDefaults.colors(
                             containerColor = TvMaterialTheme.colorScheme.surfaceVariant
@@ -406,7 +412,7 @@ fun TvCatalogScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         TvText(stringResource(R.string.modules_catalog_danger_message), style = TvMaterialTheme.typography.bodyMedium)
                         dangerReason?.let { TvText(it, style = TvMaterialTheme.typography.bodySmall, color = TvMaterialTheme.colorScheme.error) }
-                        TvText(stringResource(R.string.modules_catalog_danger_confirm), style = TvMaterialTheme.typography.bodyMedium)
+                        TvText(stringResource(R.string.modules_catalog_danger_prompt), style = TvMaterialTheme.typography.bodyMedium)
                     }
                 },
                 confirmButton = {

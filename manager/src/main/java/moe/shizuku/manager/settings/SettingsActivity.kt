@@ -11,12 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,6 +29,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,6 +54,7 @@ import moe.shizuku.manager.receiver.BootCompleteReceiver
 import moe.shizuku.manager.ui.compose.SettingsItem
 import moe.shizuku.manager.ui.compose.SettingsSection
 import moe.shizuku.manager.ui.compose.SettingsSwitchItem
+import moe.shizuku.manager.ui.compose.AnimatedScreenContent
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
@@ -117,6 +115,29 @@ private enum class SecondarySubscreen(val depth: Int) {
     LAB_FEATURES(1)
 }
 
+private val PhoneSettingsRouteSaver = Saver<PhoneSettingsRoute, String>(
+    save = { route ->
+        when (route) {
+            PhoneSettingsRoute.Root -> "root"
+            is PhoneSettingsRoute.Category -> "category:${route.category.name}"
+            PhoneSettingsRoute.UpdateSettings -> "update"
+        }
+    },
+    restore = { value ->
+        when {
+            value == "root" -> PhoneSettingsRoute.Root
+            value == "update" -> PhoneSettingsRoute.UpdateSettings
+            value.startsWith("category:") -> {
+                val name = value.substringAfter("category:")
+                SettingsCategory.entries.firstOrNull { it.name == name }
+                    ?.let { PhoneSettingsRoute.Category(it) }
+                    ?: PhoneSettingsRoute.Root
+            }
+            else -> PhoneSettingsRoute.Root
+        }
+    }
+)
+
 @Composable
 private fun settingsCategoryAccent(index: Int): Pair<Color, Color> {
     val scheme = MaterialTheme.colorScheme
@@ -155,8 +176,12 @@ class SettingsActivity : AppActivity() {
             var showNightDialog by remember { mutableStateOf(false) }
             var showModuleModeDialog by remember { mutableStateOf(false) }
             var showCustomPermissionsDialog by remember { mutableStateOf(false) }
-            var phoneRoute by remember { mutableStateOf<PhoneSettingsRoute>(PhoneSettingsRoute.Root) }
-            var secondarySubscreen by remember { mutableStateOf(SecondarySubscreen.ROOT) }
+            var phoneRoute by rememberSaveable(stateSaver = PhoneSettingsRouteSaver) {
+                mutableStateOf<PhoneSettingsRoute>(PhoneSettingsRoute.Root)
+            }
+            var secondarySubscreen by rememberSaveable {
+                mutableStateOf(SecondarySubscreen.ROOT)
+            }
 
             var moduleAccessMode by remember {
                 mutableStateOf(ModuleSettings.getAccessMode())
@@ -182,11 +207,11 @@ class SettingsActivity : AppActivity() {
                 buildLocaleOptions(languageTag)
             }
             val languageSummary = localeOptions.firstOrNull { it.tag == languageTag }?.title
-                ?: stringResource(rikka.core.R.string.follow_system)
+                ?: stringResource(R.string.follow_system)
             val nightValues = resources.getIntArray(R.array.night_mode_value).toList()
             val nightLabels = stringArrayResource(R.array.night_mode).toList()
             val nightSummary = nightLabels.getOrElse(nightValues.indexOf(nightMode)) {
-                stringResource(rikka.core.R.string.follow_system)
+                stringResource(R.string.follow_system)
             }
             val contributors = htmlToPlainText(getString(R.string.translation_contributors))
 
@@ -212,16 +237,10 @@ class SettingsActivity : AppActivity() {
                         secondarySubscreen = SecondarySubscreen.ROOT
                     }
                     moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                        AnimatedContent(
+                        AnimatedScreenContent(
                             targetState = secondarySubscreen,
-                            transitionSpec = {
-                                if (targetState.depth >= initialState.depth) {
-                                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                                } else {
-                                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                                }
-                            },
-                            label = "wear-settings-subscreen"
+                            label = "settingsWatchRoute",
+                            depth = { it.depth }
                         ) { subscreen ->
                             when (subscreen) {
                                 SecondarySubscreen.TOKEN_SETTINGS -> {
@@ -236,6 +255,8 @@ class SettingsActivity : AppActivity() {
                                             packageManager.setComponentEnabled(componentName, enabled)
                                             startOnBoot = packageManager.isComponentEnabled(componentName)
                                         },
+                                        languageSummary = languageSummary,
+                                        onLanguageClick = { showLanguageDialog = true },
                                         nightModeSummary = nightSummary,
                                         onNightModeClick = { showNightDialog = true },
                                         blackNightTheme = blackNightTheme,
@@ -269,19 +290,7 @@ class SettingsActivity : AppActivity() {
                                             backgroundCheckEnabled = enabled
                                             ModuleUpdateScheduler.syncSchedule(this@SettingsActivity)
                                         },
-                                        onGitHubTokenClick = { secondarySubscreen = SecondarySubscreen.TOKEN_SETTINGS },
-                                        showNightDialog = false,
-                                        nightLabels = nightLabels,
-                                        nightValues = nightValues,
-                                        currentNightMode = nightMode,
-                                        onNightModeSelect = { value ->
-                                            prefs.edit().putInt(NIGHT_MODE, value).apply()
-                                            nightMode = value
-                                            AppCompatDelegate.setDefaultNightMode(value)
-                                            showNightDialog = false
-                                            recreate()
-                                        },
-                                        onNightDialogDismiss = { showNightDialog = false }
+                                        onGitHubTokenClick = { secondarySubscreen = SecondarySubscreen.TOKEN_SETTINGS }
                                     )
                                 }
                             }
@@ -293,16 +302,10 @@ class SettingsActivity : AppActivity() {
                         secondarySubscreen = SecondarySubscreen.ROOT
                     }
                     moe.shizuku.manager.ui.compose.TvShizukuTheme {
-                        AnimatedContent(
+                        AnimatedScreenContent(
                             targetState = secondarySubscreen,
-                            transitionSpec = {
-                                if (targetState.depth >= initialState.depth) {
-                                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                                } else {
-                                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                                }
-                            },
-                            label = "tv-settings-subscreen"
+                            label = "settingsTvRoute",
+                            depth = { it.depth }
                         ) { subscreen ->
                             when (subscreen) {
                                 SecondarySubscreen.TOKEN_SETTINGS -> {
@@ -346,6 +349,7 @@ class SettingsActivity : AppActivity() {
                                         },
                                         moduleAccessMode = moduleAccessMode,
                                         onModuleAccessModeClick = { showModuleModeDialog = true },
+                                        onCustomPermissionsClick = { showCustomPermissionsDialog = true },
                                         allowBackgroundActions = allowBackgroundActions,
                                         onAllowBackgroundActionsChange = { enabled ->
                                             ModuleSettings.setAllowBackgroundActions(enabled)
@@ -386,16 +390,10 @@ class SettingsActivity : AppActivity() {
                             }
                         }
 
-                        AnimatedContent(
+                        AnimatedScreenContent(
                             targetState = phoneRoute,
-                            transitionSpec = {
-                                if (targetState.depth >= initialState.depth) {
-                                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                                } else {
-                                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                                }
-                            },
-                            label = "settings-category"
+                            label = "settingsPhoneRoute",
+                            depth = { it.depth }
                         ) { route ->
                             when (route) {
                                 is PhoneSettingsRoute.UpdateSettings -> {
@@ -513,7 +511,7 @@ class SettingsActivity : AppActivity() {
                                                             index = 0,
                                                             count = itemCount,
                                                             icon = R.drawable.ic_outline_dark_mode_24,
-                                                            title = stringResource(rikka.core.R.string.dark_theme),
+                                                            title = stringResource(R.string.dark_theme),
                                                             summary = nightSummary,
                                                             onClick = { showNightDialog = true }
                                                         )
@@ -754,7 +752,7 @@ class SettingsActivity : AppActivity() {
                     if (isWatch) {
                         moe.shizuku.manager.ui.compose.WearShizukuTheme {
                             WearChoiceDialog(
-                                title = stringResource(rikka.core.R.string.dark_theme),
+                                title = stringResource(R.string.dark_theme),
                                 choices = choices,
                                 selectedIndex = selectedIndex,
                                 onDismiss = { showNightDialog = false },
@@ -771,7 +769,7 @@ class SettingsActivity : AppActivity() {
                     } else if (isTv) {
                         moe.shizuku.manager.ui.compose.TvShizukuTheme {
                             TvChoiceDialog(
-                                title = stringResource(rikka.core.R.string.dark_theme),
+                                title = stringResource(R.string.dark_theme),
                                 choices = choices,
                                 selectedIndex = selectedIndex,
                                 onDismiss = { showNightDialog = false },
@@ -788,7 +786,7 @@ class SettingsActivity : AppActivity() {
                     } else {
                         ShizukuExpressiveTheme {
                             ChoiceDialog(
-                                title = stringResource(rikka.core.R.string.dark_theme),
+                                title = stringResource(R.string.dark_theme),
                                 choices = choices,
                                 selectedIndex = selectedIndex,
                                 onDismiss = { showNightDialog = false },
@@ -917,7 +915,7 @@ class SettingsActivity : AppActivity() {
 
         return localeTags.mapIndexed { index, tag ->
             if (index == 0) {
-                LocaleOption(tag.toString(), getString(rikka.core.R.string.follow_system), null)
+                LocaleOption(tag.toString(), getString(R.string.follow_system), null)
             } else {
                 val locale = Locale.forLanguageTag(displayLocaleTags[index].toString())
                 val localeName = if (!TextUtils.isEmpty(locale.script)) locale.getDisplayScript(locale) else locale.getDisplayName(locale)

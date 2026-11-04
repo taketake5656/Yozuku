@@ -107,6 +107,11 @@ abstract class HomeActivity : AppActivity() {
             var showWadbNotEnabledDialog by remember { mutableStateOf(false) }
             var showAdbPairDialog by remember { mutableStateOf(false) }
             var showStartMethodDialog by remember { mutableStateOf(false) }
+            var showStubNotice by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) {
+                showStubNotice = ShizukuSettings.consumeStubNotice()
+            }
 
             ShizukuExpressiveTheme {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -166,6 +171,10 @@ abstract class HomeActivity : AppActivity() {
                         )
                     }
 
+                    if (showStubNotice) {
+                        StubNoticeDialog(onDismiss = { showStubNotice = false })
+                    }
+
                     if (showStopDialog) {
                         HomeStopDialog(
                             onDismiss = { showStopDialog = false },
@@ -204,7 +213,7 @@ abstract class HomeActivity : AppActivity() {
                         )
                     }
 
-                    if (showAdbDiscoveryDialog) {
+                    if (showAdbDiscoveryDialog && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         HomeAdbDiscoveryDialog(
                             onDismiss = { showAdbDiscoveryDialog = false },
                             onStart = { host, port ->
@@ -220,7 +229,7 @@ abstract class HomeActivity : AppActivity() {
                         )
                     }
 
-                    if (showAdbPairDialog) {
+                    if (showAdbPairDialog && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         HomeAdbPairDialog(
                             onDismiss = { showAdbPairDialog = false }
                         )

@@ -5,11 +5,11 @@
 
 package moe.shizuku.manager.home
 
-import android.Manifest.permission.WRITE_SECURE_SETTINGS
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,6 +54,7 @@ import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.AdbKeyException
 import moe.shizuku.manager.adb.AdbMdns
 import moe.shizuku.manager.adb.AdbPairingClient
+import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
 import moe.shizuku.manager.ui.compose.MonospaceLog
 import moe.shizuku.manager.utils.EnvironmentUtils
@@ -368,6 +369,7 @@ fun HomeAdbCommandDialog(
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.R)
 @Composable
 fun HomeAdbDiscoveryDialog(
     onDismiss: () -> Unit,
@@ -390,12 +392,7 @@ fun HomeAdbDiscoveryDialog(
         }
         adbMdns.start()
 
-        if (context.checkSelfPermission(WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED) {
-            val cr = context.contentResolver
-            Settings.Global.putInt(cr, "adb_wifi_enabled", 1)
-            Settings.Global.putInt(cr, Settings.Global.ADB_ENABLED, 1)
-            Settings.Global.putLong(cr, "adb_allowed_connection_time", 0L)
-        }
+        AdbSettings.enableWirelessAdb(context)
 
         onDispose {
             adbMdns.stop()
@@ -585,6 +582,7 @@ private sealed class PairingStatus {
     data class Error(val throwable: Throwable) : PairingStatus()
 }
 
+@RequiresApi(Build.VERSION_CODES.R)
 @Composable
 fun HomeAdbPairDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current

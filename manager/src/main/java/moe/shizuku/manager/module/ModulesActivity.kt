@@ -51,10 +51,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -109,6 +114,7 @@ import moe.shizuku.manager.module.update.UpdateSettingsScreen
 import moe.shizuku.manager.nightdog.NightDogClient
 import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 import moe.shizuku.manager.ui.compose.MonospaceLog
+import moe.shizuku.manager.ui.compose.AnimatedScreenContent
 import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
@@ -310,16 +316,10 @@ class ModulesActivity : AppActivity() {
 
             if (isWatch) {
                 moe.shizuku.manager.ui.compose.WearShizukuTheme {
-                    AnimatedContent(
+                    AnimatedScreenContent(
                         targetState = activeSubscreen,
-                        transitionSpec = {
-                            if (targetState.depth >= initialState.depth) {
-                                slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                            } else {
-                                slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                            }
-                        },
-                        label = "wear-modules-subscreen"
+                        label = "modulesRoute",
+                        depth = { it.depth }
                     ) { subscreen ->
                         when (subscreen) {
                             ModulesSubscreen.CATALOG -> {
@@ -433,16 +433,10 @@ class ModulesActivity : AppActivity() {
             } else if (isTv) {
                 moe.shizuku.manager.ui.compose.TvShizukuTheme {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        AnimatedContent(
+                        AnimatedScreenContent(
                             targetState = activeSubscreen,
-                            transitionSpec = {
-                                if (targetState.depth >= initialState.depth) {
-                                    slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                                } else {
-                                    slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                                }
-                            },
-                            label = "tv-modules-subscreen"
+                            label = "modulesRoute",
+                            depth = { it.depth }
                         ) { subscreen ->
                             when (subscreen) {
                                 ModulesSubscreen.CATALOG -> {
@@ -569,16 +563,10 @@ class ModulesActivity : AppActivity() {
                     }
                 }
             } else {
-                AnimatedContent(
+                AnimatedScreenContent(
                     targetState = activeSubscreen,
-                    transitionSpec = {
-                        if (targetState.depth >= initialState.depth) {
-                            slideInHorizontally { it } + fadeIn() togetherWith slideOutHorizontally { -it / 3 } + fadeOut()
-                        } else {
-                            slideInHorizontally { -it / 3 } + fadeIn() togetherWith slideOutHorizontally { it } + fadeOut()
-                        }
-                    },
-                    label = "phone-modules-subscreen"
+                    label = "modulesRoute",
+                    depth = { it.depth }
                 ) { subscreen ->
                     when (subscreen) {
                         ModulesSubscreen.CATALOG -> {
@@ -598,88 +586,80 @@ class ModulesActivity : AppActivity() {
                             )
                         }
                         else -> {
+                            var menuExpanded by remember { mutableStateOf(false) }
+                            val updatesCount = checkReport?.updatesAvailableCount ?: 0
                             ShizukuExpressiveTheme {
                                 ShizukuLazyScaffold(
                                     title = stringResource(R.string.modules_title),
                                     onNavigateUp = { finish() },
+                                    isRefreshing = isCheckingModules || batchProgressText != null,
+                                    onRefresh = { runManualCheckNow() },
                                     actions = {
-                                        Row(
-                                            modifier = Modifier
-                                                .height(36.dp)
-                                                .padding(end = 10.dp)
-                                                .clip(MaterialTheme.shapes.small),
-                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                        ) {
-                                            if (modules.isNotEmpty()) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .height(36.dp)
-                                                        .clip(MaterialTheme.shapes.small.copy(topEnd = CornerSize(0.dp), bottomEnd = CornerSize(0.dp)))
-                                                        .background(MaterialTheme.colorScheme.secondaryContainer)
-                                                        .clickable { zipLauncher.launch(MODULE_MIME_TYPES) }
-                                                        .padding(horizontal = 14.dp),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        ShizukuIcon(
-                                                            R.drawable.ic_outline_arrow_upward_24,
-                                                            modifier = Modifier
-                                                                .padding(end = 6.dp)
-                                                                .size(16.dp)
-                                                        )
-                                                        Text(
-                                                            stringResource(R.string.modules_install_zip),
-                                                            style = MaterialTheme.typography.labelLarge
-                                                        )
-                                                    }
-                                                }
-                                                Box(
-                                                    modifier = Modifier
-                                                        .height(36.dp)
-                                                        .background(MaterialTheme.colorScheme.secondaryContainer)
-                                                        .clickable(enabled = !isCheckingModules && batchProgressText == null) { runManualCheckNow() }
-                                                        .padding(horizontal = 12.dp),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    ShizukuIcon(R.drawable.ic_server_restart, modifier = Modifier.size(18.dp))
-                                                }
+                                        Box {
+                                            IconButton(onClick = { menuExpanded = true }) {
+                                                ShizukuIcon(
+                                                    icon = R.drawable.ic_code_24dp,
+                                                    contentDescription = null
+                                                )
                                             }
-                                            Box(
-                                                modifier = Modifier
-                                                    .height(36.dp)
-                                                    .clip(MaterialTheme.shapes.small.copy(topStart = CornerSize(0.dp), bottomStart = CornerSize(0.dp)))
-                                                    .background(MaterialTheme.colorScheme.secondaryContainer)
-                                                    .clickable { activeSubscreen = ModulesSubscreen.CATALOG }
-                                                    .padding(horizontal = 12.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                ShizukuIcon(R.drawable.ic_outline_store_24, modifier = Modifier.size(18.dp))
-                                            }
-                                        }
-                                    }
-                                ) {
-                                    if (modules.isNotEmpty()) {
-                                        item {
-                                            NightDogModuleCheckBanner(
-                                                isChecking = isCheckingModules,
-                                                batchProgressText = batchProgressText,
-                                                report = checkReport,
+                                            ModulesCodeOverflowMenu(
+                                                expanded = menuExpanded,
+                                                isChecking = isCheckingModules || batchProgressText != null,
+                                                updatesCount = updatesCount,
                                                 allowBackgroundActions = allowBackgroundActions,
                                                 onToggleBackgroundActions = { enabled ->
                                                     allowBackgroundActions = enabled
                                                     ModuleSettings.setAllowBackgroundActions(enabled)
                                                 },
-                                                onRunCheck = { runManualCheckNow() },
-                                                onUpdateAll = { updateAllModulesNow() },
-                                                onOpenUpdateSettings = { activeSubscreen = ModulesSubscreen.UPDATE_SETTINGS }
+                                                onDismiss = { menuExpanded = false },
+                                                onInstallZip = {
+                                                    menuExpanded = false
+                                                    zipLauncher.launch(MODULE_MIME_TYPES)
+                                                },
+                                                onOpenCatalog = {
+                                                    menuExpanded = false
+                                                    activeSubscreen = ModulesSubscreen.CATALOG
+                                                },
+                                                onCheckModules = {
+                                                    menuExpanded = false
+                                                    runManualCheckNow()
+                                                },
+                                                onUpdateAll = {
+                                                    menuExpanded = false
+                                                    updateAllModulesNow()
+                                                },
+                                                onOpenUpdateSettings = {
+                                                    menuExpanded = false
+                                                    activeSubscreen = ModulesSubscreen.UPDATE_SETTINGS
+                                                }
                                             )
                                         }
                                     }
-                                    item {
-                                        AnimatedContent(targetState = modules.isEmpty(), label = "module-empty-state") { empty ->
-                                            if (empty) {
-                                                EmptyModulesCard(onInstall = { zipLauncher.launch(MODULE_MIME_TYPES) })
+                                ) {
+                                    if (batchProgressText != null) {
+                                        item {
+                                            Surface(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = MaterialTheme.shapes.large,
+                                                color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(14.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Text(
+                                                        text = batchProgressText!!,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                                }
                                             }
+                                        }
+                                    }
+                                    item {
+                                        if (modules.isEmpty()) {
+                                            EmptyModulesCard(onInstall = { zipLauncher.launch(MODULE_MIME_TYPES) })
                                         }
                                     }
                                     items(modules, key = { it.id }) { module ->
@@ -858,127 +838,80 @@ private fun AdbModule.actionCommandPreview(): String {
 private const val MAX_RECOMMAND_COMMAND_CHARS = 64 * 1024
 
 @Composable
-private fun NightDogModuleCheckBanner(
+private fun ModulesCodeOverflowMenu(
+    expanded: Boolean,
     isChecking: Boolean,
-    batchProgressText: String?,
-    report: NightDogClient.ModuleCheckReport?,
+    updatesCount: Int,
     allowBackgroundActions: Boolean,
     onToggleBackgroundActions: (Boolean) -> Unit,
-    onRunCheck: () -> Unit,
+    onDismiss: () -> Unit,
+    onInstallZip: () -> Unit,
+    onOpenCatalog: () -> Unit,
+    onCheckModules: () -> Unit,
     onUpdateAll: () -> Unit,
     onOpenUpdateSettings: () -> Unit
 ) {
-    val updatesCount = report?.updatesAvailableCount ?: 0
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 1.dp
+    DropdownMenuPopup(
+        expanded = expanded,
+        onDismissRequest = onDismiss
     ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+        DropdownMenuGroup(
+            shapes = MenuDefaults.groupShape(index = 0, count = 2)
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ShizukuIcon(
-                    R.drawable.ic_shield_24,
-                    modifier = Modifier.size(22.dp),
-                    tint = MaterialTheme.colorScheme.primary
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.modules_install_zip)) },
+                trailingIcon = {
+                    ShizukuIcon(R.drawable.ic_outline_arrow_upward_24, modifier = Modifier.size(20.dp))
+                },
+                onClick = onInstallZip
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.modules_catalog)) },
+                trailingIcon = {
+                    ShizukuIcon(R.drawable.ic_outline_store_24, modifier = Modifier.size(20.dp))
+                },
+                onClick = onOpenCatalog
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.modules_background_check_short)) },
+                enabled = !isChecking,
+                trailingIcon = {
+                    ShizukuIcon(R.drawable.ic_server_restart, modifier = Modifier.size(20.dp))
+                },
+                onClick = onCheckModules
+            )
+            if (updatesCount > 0) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.modules_update_all_button, updatesCount)) },
+                    enabled = !isChecking,
+                    trailingIcon = {
+                        ShizukuIcon(R.drawable.ic_outline_arrow_upward_24, modifier = Modifier.size(20.dp))
+                    },
+                    onClick = onUpdateAll
                 )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.modules_background_check_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+            }
+        }
+        Spacer(Modifier.height(3.dp))
+        DropdownMenuGroup(
+            shapes = MenuDefaults.groupShape(index = 1, count = 2)
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.modules_background_actions)) },
+                trailingIcon = {
+                    ExpressiveSwitch(
+                        checked = allowBackgroundActions,
+                        onCheckedChange = null
                     )
-                    Text(
-                        text = when {
-                            batchProgressText != null -> batchProgressText
-                            isChecking -> stringResource(R.string.modules_background_check_running)
-                            report != null -> stringResource(
-                                R.string.modules_background_check_report_summary,
-                                report.healthyModules,
-                                report.totalModules,
-                                report.updatesAvailableCount,
-                                report.issuesCount
-                            )
-                            else -> stringResource(R.string.modules_background_check_never)
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = onOpenUpdateSettings) {
+                },
+                onClick = { onToggleBackgroundActions(!allowBackgroundActions) }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.update_settings_title)) },
+                trailingIcon = {
                     ShizukuIcon(R.drawable.ic_settings_outline_24dp, modifier = Modifier.size(20.dp))
-                }
-            }
-
-            if (batchProgressText != null) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilledTonalButton(
-                    onClick = onRunCheck,
-                    enabled = !isChecking && batchProgressText == null
-                ) {
-                    if (isChecking) {
-                        LoadingIndicator(Modifier.size(16.dp))
-                    } else {
-                        ShizukuIcon(
-                            R.drawable.ic_server_restart,
-                            modifier = Modifier
-                                .padding(end = 6.dp)
-                                .size(16.dp)
-                        )
-                        Text(stringResource(R.string.modules_background_check_short))
-                    }
-                }
-
-                if (updatesCount > 0) {
-                    Button(
-                        onClick = onUpdateAll,
-                        enabled = !isChecking && batchProgressText == null
-                    ) {
-                        ShizukuIcon(
-                            R.drawable.ic_outline_arrow_upward_24,
-                            modifier = Modifier
-                                .padding(end = 6.dp)
-                                .size(16.dp)
-                        )
-                        Text(stringResource(R.string.modules_update_all_button, updatesCount))
-                    }
-                }
-            }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.modules_background_actions),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = stringResource(R.string.modules_background_actions_summary),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                ExpressiveSwitch(
-                    checked = allowBackgroundActions,
-                    onCheckedChange = onToggleBackgroundActions
-                )
-            }
+                },
+                onClick = onOpenUpdateSettings
+            )
         }
     }
 }
@@ -1052,6 +985,40 @@ private fun ModuleUpdateDialog(
                         onClick = { selectedMode = ModuleSettings.InstallMode.SOURCES },
                         label = { Text(stringResource(R.string.update_settings_install_mode_sources)) }
                     )
+                }
+                var bgAllowed by remember { mutableStateOf(ModuleSettings.allowBackgroundActions()) }
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.modules_background_actions),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = stringResource(R.string.modules_background_actions_summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        ExpressiveSwitch(
+                            checked = bgAllowed,
+                            onCheckedChange = {
+                                bgAllowed = it
+                                ModuleSettings.setAllowBackgroundActions(it)
+                            }
+                        )
+                    }
                 }
             }
         },
@@ -1202,18 +1169,10 @@ private fun ModuleCard(
                     onUpdateChipClick = onUpdateClick,
                     onUnpinClick = { onPinChange(false) }
                 )
-                AnimatedVisibility(
-                    visible = busy,
-                    enter = fadeIn(tween(180)) + expandVertically(tween(180)),
-                    exit = fadeOut(tween(120)) + shrinkVertically(tween(120))
-                ) {
+                if (busy) {
                     RunningRow()
                 }
-                AnimatedVisibility(
-                    visible = expanded,
-                    enter = fadeIn(tween(180)) + expandVertically(tween(220)),
-                    exit = fadeOut(tween(120)) + shrinkVertically(tween(160))
-                ) {
+                if (expanded) {
                     ModuleActions(
                         module = module,
                         busy = busy,
@@ -1251,15 +1210,35 @@ private fun ModuleChips(
     onUpdateChipClick: () -> Unit,
     onUnpinClick: () -> Unit
 ) {
-    FlowRow(
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalAlignment = Alignment.CenterVertically
     ) {
         AssistChip(
             onClick = {},
             label = { Text(module.id) }
         )
         AssistChip(onClick = {}, label = { Text(module.formattedSize) })
+        if (module.hasNightzukuGuard) {
+            AssistChip(
+                onClick = {},
+                leadingIcon = {
+                    ShizukuIcon(
+                        R.drawable.ic_shield_24,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    labelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
+                label = { Text(stringResource(R.string.modules_nightzuku_guard_chip)) }
+            )
+        }
         if (trusted) {
             AssistChip(onClick = {}, label = { Text(stringResource(R.string.modules_full_trust)) })
         }

@@ -137,6 +137,12 @@ action=scripts/action.sh
 
 `window.Nightzuku` や `window.Shizuku` を必要とする WebUI ページでは、`usesShellBridge=true` の指定が必須です。
 
+### WebUI での ES6 モジュール
+
+モジュールの WebUI は、どれもモジュールごとに分けられた仮想の HTTPS のオリジン（`https://mod-<hash>.appassets.androidplatform.net/`）から配信されます。有効なモジュールであれば、完全信頼にしなくても、`<script type="module" src="js/main.js">`、ローカルの `.js`／`.mjs` ファイルどうしの `import`／`export`、`fetch(./config.json)`、組み込みの ES6 モジュール `/__nightzuku__/bridge.js` が使えます。
+
+> 補足: `bridge.js` の `exec` などのヘルパーは `window.Nightzuku` を使うため、上の `usesShellBridge=true` とポリシーの許可が必要です（詳しくは [ADB モジュール API リファレンス](adb-modules-api.md) を参照）。
+
 ## スクリプトの実行環境
 
 スクリプトはモジュールのディレクトリで実行されます。次の変数を使用できます:

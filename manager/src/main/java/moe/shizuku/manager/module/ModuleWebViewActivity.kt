@@ -1,12 +1,15 @@
 package moe.shizuku.manager.module
 
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,14 +28,14 @@ import androidx.wear.compose.material3.Button as WearButton
 import androidx.wear.compose.material3.FilledTonalButton as WearFilledTonalButton
 import androidx.wear.compose.material3.MaterialTheme as WearMaterialTheme
 import androidx.wear.compose.material3.Text as WearText
-import moe.shizuku.manager.R
-import moe.shizuku.manager.app.AppActivity
-import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
-import moe.shizuku.manager.ui.compose.ShizukuScaffold
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import moe.shizuku.manager.R
+import moe.shizuku.manager.app.AppActivity
+import moe.shizuku.manager.ui.compose.ShizukuExpressiveTheme
+import moe.shizuku.manager.ui.compose.ShizukuScaffold
 
 class ModuleWebViewActivity : AppActivity() {
 
@@ -68,6 +71,14 @@ class ModuleWebViewActivity : AppActivity() {
         }
 
         setContent {
+            BackHandler {
+                val wv = activeWebView
+                if (wv != null && wv.canGoBack()) {
+                    wv.goBack()
+                } else {
+                    finish()
+                }
+            }
             var pendingCommand by remember { mutableStateOf<ModuleCommandRequest?>(null) }
             var pendingDecision by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
             val trusted = ModuleSettings.isModuleTrusted(module.id)
@@ -171,7 +182,7 @@ class ModuleWebViewActivity : AppActivity() {
                                             }
                                             item {
                                                 WearText(
-                                                    text = stringResource(R.string.modules_webview_error_wear, errorMsg),
+                                                    text = stringResource(R.string.modules_webview_error_message, errorMsg),
                                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                                     modifier = Modifier.fillMaxWidth()
                                                 )
@@ -321,23 +332,31 @@ class ModuleWebViewActivity : AppActivity() {
         webView: WebView,
         module: AdbModule,
         index: File,
-        trusted: Boolean,
+        @Suppress("UNUSED_PARAMETER") trusted: Boolean,
         webNetworkAllowed: Boolean,
         exposeBridge: Boolean,
         isWatch: Boolean,
         onPendingCommand: (ModuleCommandRequest, (Boolean) -> Unit) -> Unit
     ) {
+        val assetServer = ModuleWebAssetServer(
+            module = module,
+            webNetworkAllowed = webNetworkAllowed
+        )
+
         webView.apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.allowFileAccess = true
+            // All local module assets (including ES6 modules, JSON, WASM, CSS, and images) are served
+            // over the per-module isolated virtual HTTPS origin via ModuleWebAssetServer. Raw file://
+            // and content:// access are disabled for all modules to prevent local file inclusion outside webRoot.
+            settings.allowFileAccess = false
             settings.allowContentAccess = false
             @Suppress("DEPRECATION")
-            settings.allowFileAccessFromFileURLs = trusted
+            settings.allowFileAccessFromFileURLs = false
             @Suppress("DEPRECATION")
-            settings.allowUniversalAccessFromFileURLs = trusted
-            settings.blockNetworkLoads = !webNetworkAllowed
-            settings.cacheMode = WebSettings.LOAD_DEFAULT
+            settings.allowUniversalAccessFromFileURLs = false
+            settings.blockNetworkLoads = false
+            settings.cacheMode = WebSettings.LOAD_NO_CACHE
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
 
             settings.useWideViewPort = true
@@ -345,7 +364,7 @@ class ModuleWebViewActivity : AppActivity() {
             if (isWatch) settings.textZoom = 85
 
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-            webViewClient = object : LocalModuleWebViewClient(module, webNetworkAllowed) {
+            webViewClient = object : LocalModuleWebViewClient(assetServer) {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     view?.loadUrl(
@@ -369,7 +388,7 @@ class ModuleWebViewActivity : AppActivity() {
                 addJavascriptInterface(bridge, "Shizuku")
                 addJavascriptInterface(bridge, "Nightzuku")
             }
-            loadUrl(index.toURI().toString())
+            loadUrl(assetServer.entryUrl(index))
         }
     }
 
@@ -389,27 +408,26 @@ class ModuleWebViewActivity : AppActivity() {
     }
 
     private open class LocalModuleWebViewClient(
-        private val module: AdbModule,
-        private val webNetworkAllowed: Boolean
+        private val assetServer: ModuleWebAssetServer
     ) : WebViewClient() {
 
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            val uri = request.url
-            return when (uri.scheme?.lowercase()) {
-                "file" -> !isInsideWebRoot(uri.path.orEmpty())
-                "https" -> !webNetworkAllowed
-                "http" -> true
-                else -> true
-            }
+        override fun shouldInterceptRequest(
+            view: WebView,
+            request: WebResourceRequest
+        ): WebResourceResponse? {
+            return assetServer.intercept(request)
         }
 
-        private fun isInsideWebRoot(path: String): Boolean {
-            val root = module.webRoot ?: return false
-            return runCatching {
-                val rootFile = root.canonicalFile.toPath()
-                val target = File(path).canonicalFile.toPath()
-                target.startsWith(rootFile)
-            }.getOrDefault(false)
+        @Deprecated("Deprecated in Java")
+        override fun shouldInterceptRequest(
+            view: WebView,
+            url: String
+        ): WebResourceResponse? {
+            return assetServer.interceptUri(runCatching { Uri.parse(url) }.getOrNull(), "GET")
+        }
+
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            return assetServer.shouldOverrideNavigation(request)
         }
     }
 

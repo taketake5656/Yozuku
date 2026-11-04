@@ -32,7 +32,7 @@ fn register_natives(env: &mut JNIEnv, class_name: &str, methods: &[NativeMethod]
     if let Err(source) = env.register_native_methods(class, methods) {
         error!("Unable to register the {class_name} native methods: {source}");
         return false;
-    }
+    };
 
     true
 }
@@ -40,7 +40,7 @@ fn register_natives(env: &mut JNIEnv, class_name: &str, methods: &[NativeMethod]
 #[unsafe(no_mangle)]
 pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut c_void) -> jint {
     init_logging();
-    pts::initialize_mutexes();
+    pts::initialize_sync_primitives();
 
     let Ok(mut env) = vm.get_env() else {
         error!("Unable to obtain the JNI environment.");
@@ -52,6 +52,11 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut c_void) -> jint {
             name: "start".into(),
             sig: "([BI[BI[BBIII)[I".into(),
             fn_ptr: host::native_start as *mut c_void,
+        },
+        NativeMethod {
+            name: "nativeSpawnGroup".into(),
+            sig: "([Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)[I".into(),
+            fn_ptr: host::native_spawn_group as *mut c_void,
         },
         NativeMethod {
             name: "setWindowSize".into(),

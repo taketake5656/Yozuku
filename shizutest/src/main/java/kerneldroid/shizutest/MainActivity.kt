@@ -32,9 +32,12 @@ import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.*
+import kerneldroid.nightzuku.api.NightBinderWrapper
 import kerneldroid.nightzuku.api.NightClient
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.ShizukuSystemProperties
@@ -110,8 +113,8 @@ class MainActivity : ComponentActivity() {
         if (testsList.isEmpty()) {
             testsList.addAll(
                 listOf(
-                    DiagnosticTest("ping", "Dual-Wire Binder Ping", "Verify NightClient & Legacy Shizuku connectivity"),
-                    DiagnosticTest("night_exec", "NightProtocol Fast Exec", "Execute one-shot command over flat Parcel wire"),
+                    DiagnosticTest("ping", "Dual-Wire Binder Ping", "Verify NightClient session, diagnostics & Legacy Shizuku connectivity"),
+                    DiagnosticTest("night_exec", "NightProtocol Fast & Async Exec", "Execute one-shot and oneway async commands over flat Parcel wire"),
                     DiagnosticTest("latency", "IPC Transaction Speed", "Measure IPC transaction roundtrip delay"),
                     DiagnosticTest("selinux", "SELinux Context Check", "Verify server SELinux confinement domain"),
                     DiagnosticTest("shell", "High-Privilege Shell Spawner", "Spawn process and execute 'id' command"),
@@ -217,15 +220,17 @@ class MainActivity : ComponentActivity() {
                 if (NightClient.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
                     throw IllegalStateException("NightClient permission not granted.")
                 }
-                val res = NightClient.execFast(arrayOf("id"))
-                if (res.exitCode == 0) {
+                val fastRes = NightClient.execFast(arrayOf("id"))
+                val asyncRes = NightClient.execAsync(arrayOf("uname", "-r"))
+                if (fastRes.exitCode == 0 && asyncRes.exitCode == 0) {
                     TestResult(
                         status = TestStatus.GOOD,
-                        summary = "exit=0",
-                        details = "NightClient.execFast('id') succeeded in one flat Parcel roundtrip:\n${res.outputText.trim()}"
+                        summary = "exit=0 (sync+async)",
+                        details = "execFast('id'): ${fastRes.outputText.trim()}\n" +
+                            "execAsync('uname -r'): ${asyncRes.outputText.trim()}"
                     )
                 } else {
-                    throw IllegalStateException("execFast exited with ${res.exitCode}: ${res.errorText}")
+                    throw IllegalStateException("execFast=${fastRes.exitCode}, execAsync=${asyncRes.exitCode}")
                 }
             }
 
@@ -284,10 +289,12 @@ class MainActivity : ComponentActivity() {
                     String::class.java
                 )
                 newProcessMethod.isAccessible = true
-                val process = newProcessMethod.invoke(null, arrayOf("id"), null, null) as Process
-                val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
-                val error = process.errorStream.bufferedReader().use { it.readText() }.trim()
-                val exitCode = process.waitFor()
+                val (output, error, exitCode) = withContext(Dispatchers.IO) {
+                    val process = newProcessMethod.invoke(null, arrayOf("id"), null, null) as Process
+                    val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+                    val error = process.errorStream.bufferedReader().use { it.readText() }.trim()
+                    Triple(output, error, process.waitFor())
+                }
                 if (exitCode == 0) {
                     val summary = if (output.contains("uid=0")) "root" else if (output.contains("uid=2000")) "shell" else "Success"
                     TestResult(
@@ -301,9 +308,14 @@ class MainActivity : ComponentActivity() {
             }
 
             runTestItem("package") {
-                if (!Shizuku.pingBinder()) throw IllegalStateException("Binder is inactive.")
-                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                    throw IllegalStateException("Shizuku permission not granted.")
+                if (!NightClient.pingBinder() && !Shizuku.pingBinder()) throw IllegalStateException("Binder is inactive.")
+                val granted = if (NightClient.pingBinder()) {
+                    NightClient.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                } else {
+                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+                }
+                if (!granted) {
+                    throw IllegalStateException("Nightzuku permission not granted.")
                 }
                 val count = queryPackagesCount()
                 TestResult(
@@ -373,7 +385,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun queryPackagesCount(): Int {
-        val binder = ShizukuBinderWrapper(SystemServiceHelper.getSystemService("package"))
+        val rawService = SystemServiceHelper.getSystemService("package") ?: throw IllegalStateException("package service not found")
+        val binder = if (NightClient.pingBinder()) NightBinderWrapper(rawService) else ShizukuBinderWrapper(rawService)
         val stubClass = Class.forName("android.content.pm.IPackageManager\$Stub")
         val asInterfaceMethod = stubClass.getMethod("asInterface", android.os.IBinder::class.java)
         val packageManagerInstance = asInterfaceMethod.invoke(null, binder)

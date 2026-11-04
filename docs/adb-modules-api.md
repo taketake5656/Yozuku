@@ -174,9 +174,22 @@ require_nightzuku_host
 - 最後の出力は `logs/service-last.log` に書き込まれます。
 - タイムアウト（120 秒）時は終了コード `124` を返します。
 
-## WebUI と JavaScript のブリッジ
+## WebUI、仮想 HTTPS のアセットサーバー、ES6 モジュール
 
-WebUI は `webui/index.html` から読み込まれます。`module.prop` に `usesShellBridge=true` があり、ポリシーで許可されている場合、`window.Nightzuku` と `window.Shizuku` の両方が公開されます。
+WebUI の `webui/index.html` は、`ModuleWebAssetServer` によって、モジュールごとに分けられた仮想の HTTPS のオリジン（`https://mod-<sha256_prefix>.appassets.androidplatform.net/`）から配信されます。`<sha256_prefix>` は、小文字にしたモジュール ID の SHA-256 の先頭 8 バイト（16 進数で 16 文字）です。
+
+- **完全信頼なしで ES6 モジュールが使える**: `<script type="module" src="...">`、静的・動的な `import`／`export`（`.js`、`.mjs`、`.cjs`。拡張子を省いた import も可）、`fetch()`、Web Worker、WASM（`.wasm`）、CSS の `@import` が、通常のブラウザーの同一オリジンのルールで、有効なすべてのモジュールで使えます。**完全信頼は必要ありません**。
+- **モジュールごとのオリジンの分離**: モジュール ID ごとに別のサブドメインになるので、`localStorage`、`sessionStorage`、`IndexedDB`、`CacheStorage` がほかのモジュールと混ざりません。
+- **`file://` を直接開かない**: WebView の `file://` と `content://` へのアクセス（`allowFileAccess`、`allowFileAccessFromFileURLs`、`allowUniversalAccessFromFileURLs`）は、すべてのモジュールで無効です。配信するファイルのパスは、正規化したうえで `webRoot` の中にあるかを確かめます。
+- **組み込みの ES6 ブリッジモジュール（`/__nightzuku__/bridge.js` または `/nightzuku.mjs`）**: ES6 モジュールから、非同期のヘルパーを直接 import できます。
+  ```js
+  import { exec, getModuleInfo, verifyHost, download } from "/__nightzuku__/bridge.js";
+  ```
+- `module.prop` に `usesShellBridge=true` があり、ポリシーで許可されている場合は、従来どおりグローバルの `window.Nightzuku` と `window.Shizuku` の両方も公開されます。
+
+> 補足（コードとの違い）: 上流の英語の文書では、パスの確認に `ModuleRuntimeUtils.ensureInside` を使うと書かれていますが、`ModuleWebAssetServer` が実際に使っているのは `ModuleRuntimeUtils.isInside` です（動作は同じく `webRoot` の外を拒否します）。また、モジュールごとのオリジンのほかに、共通のホスト `appassets.androidplatform.net` を明示した URL も互換のために受け付けます。
+>
+> 組み込みの `bridge.js` は `window.Nightzuku`（または `window.Shizuku`）を包んだものなので、ES6 モジュール自体の読み込みに完全信頼は不要でも、`exec` などのヘルパーを使うにはブリッジが公開されている必要があります。ブリッジが公開されていないと、`exec`・`verifyHost`・`download` などはエラーを投げます（`isBridgeAvailable()` で確かめられます）。コード上、ブリッジが公開されるのは、モジュールが有効で、アクセスポリシーがブリッジを許可し、`usesShellBridge=true`（または完全信頼）で、さらに WebView のインターネットがオフ（または完全信頼）の場合です。
 
 ### ブリッジのメソッド
 
@@ -185,6 +198,13 @@ WebUI は `webui/index.html` から読み込まれます。`module.prop` に `us
 - `window.Nightzuku.exec(command)` — 既定のタイムアウト（`120 秒`）でシェルのコマンドを実行します。
 - `window.Nightzuku.execWithOptions(command, optionsJson)` — `timeoutSeconds`、`cwd`、`stdin`（最大 64 KB）、`env` を指定して実行します。
 - `window.Nightzuku.download(url, relativeWebPath)` — HTTPS のファイル（最大 20 MB）をモジュールの WebUI のディレクトリにダウンロードします（`index.html` は上書きできません）。
+
+> 補足（コードとの違い）: 上流の英語の文書には書かれていませんが、コード（`ModuleJsBridge.kt`）には次のメソッドもあり、組み込みの `bridge.js` からも使えます。
+>
+> - `getRuntimeInfo()` — 現在は `getModuleInfo()` と同じ JSON を返します。
+> - `readText(relativePath)` — モジュールのフォルダ内のテキストファイル（最大 2 MB）を読み込みます。
+> - `writeText(relativePath, content)` — モジュールのフォルダ内にテキストファイル（最大 2 MB）を書き込みます。`module.prop`、`disable` などは書き換えられず、完全信頼でないモジュールは `index.html` と `nightzuku-guard.*` も書き換えられません。
+> - `listFiles(relativePath)` — モジュールのフォルダ内のファイルの一覧を返します。
 
 ## バックグラウンドでのアップデート
 

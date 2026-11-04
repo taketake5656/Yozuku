@@ -79,6 +79,9 @@ Yozuku はプロキシとして動作し、アプリからのリクエストを�
   <summary>📸 クリックしてスクリーンショットを表示</summary>
   <br/>
 
+  > [!NOTE]
+  > これらのスクリーンショットは、[`Screenshots`](.github/workflows/screenshots.yml) ワークフローが Android 17、Wear OS 7、Android TV 16 のエミュレーターで自動で撮影したものです（英語表示）。最新のコミットより少し古いことがあります。
+
   ### スマートフォン UI
   <table>
     <tr>

@@ -7,6 +7,10 @@ idea.module {
 }
 
 subprojects {
+    // API modules ship under kerneldroid.nightzuku; keep the group consistent so
+    // @RestrictTo(LIBRARY_GROUP_PREFIX) constants are not reported by lint.
+    group = "io.github.kerneldroid"
+
     plugins.withId("com.android.base") {
         android {
             compileSdk = 37
@@ -38,7 +42,7 @@ def resolveGitCommitId = {
     return "nogit"
 }
 def gitCommitId = resolveGitCommitId()
-def gitCommitCount = 58
+def gitCommitCount = 60
 def baseVersionName = "${api_version_major}.7.1"
 ext {
     versionCode = gitCommitCount

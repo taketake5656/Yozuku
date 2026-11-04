@@ -76,6 +76,9 @@ Yozuku acts as a proxy, receiving requests from the app and forwarding them to t
   <summary>📸 Click to open Screenshot Gallery</summary>
   <br/>
 
+  > [!NOTE]
+  > These screenshots are generated automatically by the [`Screenshots`](.github/workflows/screenshots.yml) workflow on Android 17, Wear OS 7, and Android TV 16 emulators. They may lag slightly behind the latest commit.
+
   ### Phone UI
   <table>
     <tr>

@@ -13,7 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.VpnKey
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.material3.Button as WearButton
@@ -131,6 +138,7 @@ fun WearTokenSettingsScreen(
     if (showTokenDialog) {
         var tokenInput by remember { mutableStateOf(githubToken) }
         var showPat by remember { mutableStateOf(false) }
+        val showWarning = tokenInput.isNotBlank() && !TokenStore.isValidTokenFormat(tokenInput)
 
         WearAlertDialog(
             visible = true,
@@ -139,11 +147,12 @@ fun WearTokenSettingsScreen(
             confirmButton = {
                 WearButton(
                     onClick = {
-                        githubToken = tokenInput
-                        if (tokenInput.isBlank()) {
+                        val trimmed = tokenInput.trim()
+                        githubToken = trimmed
+                        if (trimmed.isBlank()) {
                             TokenStore.clearToken(context)
                         } else {
-                            TokenStore.setToken(context, tokenInput)
+                            TokenStore.setToken(context, trimmed)
                         }
                         showTokenDialog = false
                     },
@@ -161,36 +170,50 @@ fun WearTokenSettingsScreen(
                         color = WearMaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(8.dp))
-                    WearText(
-                        text = if (tokenInput.isNotBlank()) {
-                            if (showPat) tokenInput else tokenInput.take(8) + "..."
-                        } else {
-                            stringResource(R.string.modules_catalog_token_hint)
-                        },
-                        style = WearMaterialTheme.typography.bodyMedium,
+                    OutlinedTextField(
+                        value = tokenInput,
+                        onValueChange = { tokenInput = it },
+                        label = { Text(stringResource(R.string.modules_catalog_token_hint)) },
+                        singleLine = true,
+                        visualTransformation = if (showPat) VisualTransformation.None else PasswordVisualTransformation(),
+                        isError = showWarning,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
                     )
-                    WearButton(
-                        onClick = { showPat = !showPat },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = WearButtonDefaults.buttonColors()
-                    ) {
+                    if (showWarning) {
                         WearText(
-                            stringResource(
-                                if (showPat) R.string.update_settings_github_pat_hide
-                                else R.string.update_settings_github_pat_show
-                            )
+                            text = stringResource(R.string.modules_catalog_token_format_warning),
+                            style = WearMaterialTheme.typography.labelSmall,
+                            color = WearMaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(bottom = 4.dp)
                         )
                     }
-                    Spacer(Modifier.height(4.dp))
-                    WearButton(
-                        onClick = { tokenInput = "" },
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = WearButtonDefaults.buttonColors()
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
                     ) {
-                        WearText(stringResource(R.string.update_settings_github_pat_clear))
+                        WearIconButton(
+                            onClick = { showPat = !showPat },
+                            modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
+                        ) {
+                            WearIcon(
+                                imageVector = if (showPat) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                contentDescription = stringResource(
+                                    if (showPat) R.string.update_settings_github_pat_hide
+                                    else R.string.update_settings_github_pat_show
+                                )
+                            )
+                        }
+                        WearIconButton(
+                            onClick = { tokenInput = "" },
+                            modifier = Modifier.size(WearIconButtonDefaults.DefaultButtonSize)
+                        ) {
+                            WearIcon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = stringResource(R.string.update_settings_github_pat_clear)
+                            )
+                        }
                     }
                 }
             }
