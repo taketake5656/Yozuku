@@ -106,30 +106,6 @@ jobs:
       - name: Stage stealth APK
         run: |
           cp out/apk/*-release.apk "dist/nightzuku-${{ github.ref_name }}-stealth-$STEALTH_ID.apk"
-      - name: Checkout compatibility stub
-        uses: actions/checkout@v7
-        with:
-          repository: kerneldroid/nightzuku-stub
-          path: stub
-          ref: main
-      - name: Configure stub signing
-        run: |
-          {
-            printf 'KEYSTORE_FILE=../key.jks\n'
-            printf 'KEYSTORE_PASSWORD=%s\n' "$KEYSTORE_PASSWORD"
-            printf 'KEYSTORE_ALIAS=%s\n' "$KEYSTORE_ALIAS"
-            printf 'KEYSTORE_ALIAS_PASSWORD=%s\n' "$KEYSTORE_ALIAS_PASSWORD"
-          } > stub/signing.properties
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
-          KEYSTORE_ALIAS_PASSWORD: ${{ secrets.KEYSTORE_ALIAS_PASSWORD }}
-      - name: Build compatibility stub APK
-        run: |
-          ./stub/gradlew -p stub :app:assembleRelease \
-            -Pstub.versionCode=${{ github.run_number }} \
-            -Pstub.versionName=${GITHUB_REF_NAME#v}
-          cp stub/app/build/outputs/apk/release/app-release.apk "dist/nightzuku-stub-${{ github.ref_name }}.apk"
       - name: Verify APK identities
         run: |
           BT="$ANDROID_HOME/build-tools/37.0.0"
@@ -137,7 +113,6 @@ jobs:
           "$BT/aapt2" dump badging dist/*-stealth-*.apk | grep -q "name='$STEALTH_ID'"
           "$BT/aapt2" dump xmltree --file AndroidManifest.xml dist/*-stealth-*.apk \
             | grep -q "kerneldroid.nightzuku.manager"
-          "$BT/aapt2" dump badging dist/*stub*.apk | grep -q "name='moe.shizuku.privileged.api'"
       - name: Verify signatures
         run: |
           for apk in dist/*.apk; do

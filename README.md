@@ -154,11 +154,12 @@ Yozuku はプロキシとして動作し、アプリからのリクエストを�
 
 `.github/workflows/release.yml` で、署名済みのリリース版をビルドできます。署名にはリポジトリの Secrets（`KEYSTORE`、`KEYSTORE_PASSWORD`、`KEYSTORE_ALIAS`、`KEYSTORE_ALIAS_PASSWORD`）を使用します。Secrets が未設定の場合はビルドが失敗します。
 
-ワークフローは、次の 3 つの APK をビルドします（どれも同じ鍵で署名します）。
+ワークフローは、次の 2 つの APK をビルドします（どちらも同じ鍵で署名します）。
 
 - `nightzuku-<タグ>-release.apk`: 通常版（パッケージ ID `kerneldroid.nightzuku`）
 - `nightzuku-<タグ>-stealth-<パッケージ ID>.apk`: ステルス版。パッケージ ID をビルドのたびにランダムな値（`com.xxxxxxxx.xxxxxxxx` の形）にしたもので、手動実行のときは入力欄 `stealth_id` で固定の値を指定することもできます。プロバイダのオーソリティ（`kerneldroid.nightzuku.*`）は通常版と同じなので、通常版と同時にはインストールできません
-- `nightzuku-stub-<タグ>.apk`: Shizuku のパッケージ ID（`moe.shizuku.privileged.api`）があるかどうかを確認するアプリ向けの互換スタブ。上流の別リポジトリ [kerneldroid/nightzuku-stub](https://github.com/kerneldroid/nightzuku-stub) の `main` をビルドします。公式の Shizuku アプリと同時にはインストールできません
+
+上流は、Shizuku のパッケージ ID（`moe.shizuku.privileged.api`）があるかどうかを確認するアプリ向けの互換スタブ（`nightzuku-stub-<タグ>.apk`）もビルドしますが、このフォークではビルドしません。スタブは上流の別リポジトリ [kerneldroid/nightzuku-stub](https://github.com/kerneldroid/nightzuku-stub) をビルドするもので、署名鍵を使う環境で外部のリポジトリをビルドすることになるのと、ライセンスの節で派生版に禁じているパッケージ ID を使うためです。必要な場合は上流のリリースのものを使ってください。
 
 - **GitHub Release として公開する**: `v` で始まるタグを push します。ビルドした APK が添付されたリリースが自動で作成されます。
 
