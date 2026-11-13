@@ -14,7 +14,8 @@ import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kerneldroid.nightzuku.api.NightProtocol
@@ -26,6 +27,7 @@ import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.server.api.RemoteProcessHolder
 import rikka.shizuku.server.util.Logger
 import rikka.shizuku.server.util.OsUtils
+import rikka.shizuku.server.util.ServerSmartLogCollector
 
 private fun Process.destroyCompat() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -91,13 +93,21 @@ class NightServiceEndpoint(
     }
 
     private val logger = Logger("NightEndpoint")
+    private val EXEC_POOL_SIZE = 4
+    private val EXEC_QUEUE_CAPACITY = 64
     private val nightCallbacks = ConcurrentHashMap<Int, IBinder>()
     private val nightCallbackDeaths = ConcurrentHashMap<Int, IBinder.DeathRecipient>()
     private val callbackUids = ConcurrentHashMap<Int, Int>()
     private val activeExecCalls = ConcurrentHashMap<ExecCallKey, ActiveExecHandle>()
-    private val execPool = Executors.newCachedThreadPool { r ->
-        Thread(r, "night-exec").apply { isDaemon = true }
-    }
+    private val execPool = ThreadPoolExecutor(
+        EXEC_POOL_SIZE,
+        EXEC_POOL_SIZE,
+        30L,
+        TimeUnit.SECONDS,
+        ArrayBlockingQueue(EXEC_QUEUE_CAPACITY),
+        { r -> Thread(r, "night-exec").apply { isDaemon = true } },
+        ThreadPoolExecutor.CallerRunsPolicy()
+    )
 
     init {
         attachInterface(null, NightProtocol.DESCRIPTOR)
@@ -314,6 +324,12 @@ class NightServiceEndpoint(
             NightProtocol.TRANSACTION_GET_SERVER_DIAGNOSTICS -> {
                 data.enforceInterface(NightProtocol.DESCRIPTOR)
                 service.enforceCallingPermission("getServerDiagnostics")
+                val isManager = service.checkCallerManagerPermission(
+                    "getServerDiagnostics",
+                    Binder.getCallingUid(),
+                    Binder.getCallingPid()
+                )
+                val smartBundle = if (isManager) ServerSmartLogCollector.buildSmartLogsBundle() else null
                 val diagnostics = Bundle().apply {
                     putInt("uid", OsUtils.getUid())
                     putInt("pid", OsUtils.getPid())
@@ -323,6 +339,11 @@ class NightServiceEndpoint(
                     putBoolean("accessPaused", service.configManager.isAccessPaused())
                     putBoolean("nightDogEnabled", service.configManager.getNightDogEnabled())
                     putInt("activeClientsCount", service.clientManager.getActiveClients().size)
+                    if (smartBundle != null) {
+                        putInt("smartSnapshotCount", smartBundle.getInt("snapshotCount", 0))
+                        putString("serializedSmartSnapshots", smartBundle.getString("serializedSnapshots"))
+                        putString("qprCompatAudit", smartBundle.getString("qprCompatAudit"))
+                    }
                 }
                 reply!!.writeNoException()
                 reply.writeBundle(diagnostics)

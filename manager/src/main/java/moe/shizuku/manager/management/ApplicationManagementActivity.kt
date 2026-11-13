@@ -112,6 +112,7 @@ import moe.shizuku.manager.R
 import moe.shizuku.manager.app.AppActivity
 import moe.shizuku.manager.authorization.AppControlSnapshot
 import moe.shizuku.manager.authorization.AuthorizationManager
+import moe.shizuku.manager.ui.compose.AnimatedScreenContent
 import moe.shizuku.manager.ui.compose.ExpressiveCard
 import moe.shizuku.manager.ui.compose.ExpressiveSwitch
 import moe.shizuku.manager.ui.compose.SettingsItem
@@ -123,6 +124,7 @@ import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.ui.compose.ShizukuLazyScaffold
 import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.utils.ShizukuSystemApis
+import moe.shizuku.manager.utils.SmartLogManager
 import moe.shizuku.manager.utils.UserHandleCompat
 import rikka.lifecycle.Status
 import rikka.shizuku.Shizuku
@@ -152,8 +154,9 @@ class ApplicationManagementActivity : AppActivity() {
 
         viewModel.packages.observe(this) {
             if (it.status == Status.ERROR) {
-                finish()
                 val tr = it.error
+                SmartLogManager.recordManagerError("APP_MANAGEMENT_PACKAGES", "Failed to load application list from server", tr)
+                finish()
                 Toast.makeText(this, Objects.toString(tr, "unknown"), Toast.LENGTH_SHORT).show()
                 tr.printStackTrace()
             }
@@ -190,9 +193,11 @@ class ApplicationManagementActivity : AppActivity() {
 
             if (isWatch || isTv) {
                 LaunchedEffect(Unit) {
-                    while (true) {
-                        delay(PERMISSION_POLL_MS)
-                        permissionTick.intValue++
+                    this@ApplicationManagementActivity.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                        while (true) {
+                            delay(PERMISSION_POLL_MS)
+                            permissionTick.intValue++
+                        }
                     }
                 }
             }
@@ -274,12 +279,25 @@ class ApplicationManagementActivity : AppActivity() {
                 val activeControlRow = remember(rows, activeControlKey) {
                     activeControlKey?.let { key -> rows?.firstOrNull { it.key == key } }
                 }
+                var lastActiveControlRow by remember { mutableStateOf<AppRow?>(null) }
+                if (activeControlRow != null) {
+                    lastActiveControlRow = activeControlRow
+                }
                 val onToggle = remember(viewModel) {
                     { row: AppRow -> viewModel.toggle(row.uid, row.packageName) }
                 }
 
-                BackHandler(enabled = activeControlRow != null || searchQuery.isNotEmpty()) {
-                    if (activeControlRow != null) {
+                LaunchedEffect(Unit) {
+                    this@ApplicationManagementActivity.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                        while (true) {
+                            delay(PERMISSION_POLL_MS)
+                            viewModel.refreshGranted()
+                        }
+                    }
+                }
+
+                BackHandler(enabled = activeControlKey != null || searchQuery.isNotEmpty()) {
+                    if (activeControlKey != null) {
                         activeControlKey = null
                         lifecycleScope.launch { viewModel.refreshGranted() }
                     } else if (searchQuery.isNotEmpty()) {
@@ -289,19 +307,30 @@ class ApplicationManagementActivity : AppActivity() {
 
                 ShizukuExpressiveTheme {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        if (activeControlRow != null) {
-                            DeepAppControlScreen(
-                                row = activeControlRow,
-                                onBack = {
-                                    activeControlKey = null
-                                    lifecycleScope.launch { viewModel.refreshGranted() }
-                                },
-                                onAdbLimited = { showAdbLimitedDialog = true },
-                                onStateMutated = {
-                                    lifecycleScope.launch { viewModel.refreshGranted() }
-                                }
-                            )
-                        } else {
+                        AnimatedScreenContent(
+                            targetState = activeControlKey,
+                            label = "appManagementPhoneRoute",
+                            depth = { if (it == null) 0 else 1 }
+                        ) { routeKey ->
+                            val targetRow = if (routeKey != null) {
+                                rows?.firstOrNull { it.key == routeKey }
+                                    ?: lastActiveControlRow?.takeIf { it.key == routeKey }
+                            } else {
+                                null
+                            }
+                            if (routeKey != null && targetRow != null) {
+                                DeepAppControlScreen(
+                                    row = targetRow,
+                                    onBack = {
+                                        activeControlKey = null
+                                        lifecycleScope.launch { viewModel.refreshGranted() }
+                                    },
+                                    onAdbLimited = { showAdbLimitedDialog = true },
+                                    onStateMutated = {
+                                        lifecycleScope.launch { viewModel.refreshGranted() }
+                                    }
+                                )
+                            } else {
                             val current = rows
                             val filteredRows = remember(current, searchQuery) {
                                 val q = searchQuery.trim()
@@ -497,6 +526,7 @@ class ApplicationManagementActivity : AppActivity() {
                                 }
                             }
                         }
+                        }
 
                         if (showAdbLimitedDialog) {
                             moe.shizuku.manager.home.HomeAdbLimitedDialog(
@@ -510,6 +540,7 @@ class ApplicationManagementActivity : AppActivity() {
     }
 
     private fun selectAll(packages: List<PackageInfo>, granted: Boolean) {
+        val failures = ArrayList<String>(4)
         packages.forEach { packageInfo ->
             val applicationInfo = packageInfo.applicationInfo ?: return@forEach
             val uid = applicationInfo.uid
@@ -520,8 +551,18 @@ class ApplicationManagementActivity : AppActivity() {
                 } else {
                     AuthorizationManager.revoke(packageName, uid)
                 }
-            } catch (_: SecurityException) {
+            } catch (t: SecurityException) {
+                failures += "${packageName}: ${t.message ?: "SecurityException"}"
+            } catch (t: Throwable) {
+                failures += "${packageName}: ${t.message ?: t.javaClass.simpleName}"
             }
+        }
+        if (failures.isNotEmpty()) {
+            Toast.makeText(
+                this,
+                "Failed for ${failures.size} app(s): ${failures.first()}",
+                Toast.LENGTH_LONG
+            ).show()
         }
         permissionTick.intValue++
         viewModel.load(onlyCount = true)

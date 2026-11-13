@@ -16,6 +16,9 @@
 アップストリームプロジェクト: <https://github.com/RikkaApps/Shizuku>
 
 > [!NOTE]
+> 上流の `Nightzuku-private` はアーカイブされ、開発はメインのリポジトリ（[kerneldroid/Nightzuku](https://github.com/kerneldroid/Nightzuku)）に戻りました。
+
+> [!NOTE]
 > **Shizuku からはスムーズに移行できます。公式の Shizuku アプリをアンインストールする必要はありません。** Yozuku は旧来の `moe.shizuku.manager.permission.API_V23` 権限を宣言しなくなった（マージ後のマニフェストから明示的に削除している）ため、公式の Shizuku Manager と権限やオーソリティが競合しません。詳しくは [2 系統のアーキテクチャと移行](#2-系統のアーキテクチャと移行) を参照してください。
 
 ## フォークでの追加機能
@@ -100,17 +103,12 @@ Yozuku はプロキシとして動作し、アプリからのリクエストを�
   ### Wear OS UI（ネイティブ Material 3）
   <table>
     <tr>
-      <td align="center"><img src="screenshots/wearos/wearos_main_scaled.png" width="200" /><br/><b>メイン画面</b></td>
-      <td align="center"><img src="screenshots/wearos/wearos_apps.png" width="200" /><br/><b>許可済みアプリ</b></td>
-    </tr>
-    <tr>
-      <td align="center"><img src="screenshots/wearos/wearos_modules_scaled.png" width="200" /><br/><b>ADB モジュール</b></td>
-      <td align="center"><img src="screenshots/wearos/wearos_settings_scaled.png" width="200" /><br/><b>設定</b></td>
-    </tr>
-    <tr>
-      <td colspan="2" align="center"><img src="screenshots/wearos/wearos_dialog.png" width="200" /><br/><b>テーマダイアログ</b></td>
+      <td align="center"><img src="screenshots/wearos/main.png" width="200" /><br/><b>メイン画面</b></td>
+      <td align="center"><img src="screenshots/wearos/settings.png" width="200" /><br/><b>設定</b></td>
     </tr>
   </table>
+
+  > ADB モジュールは、意図的に Wear OS では提供していません。モジュールの画面はスマートフォンでのみ使えます。
 
   ### Android TV UI（ネイティブ Material 3）
   <table>
@@ -118,8 +116,7 @@ Yozuku はプロキシとして動作し、アプリからのリクエストを�
       <td colspan="2" align="center"><img src="screenshots/tv/main.png" width="500" /><br/><b>メイン画面</b></td>
     </tr>
     <tr>
-      <td align="center"><img src="screenshots/tv/modules.png" width="400" /><br/><b>ADB モジュール</b></td>
-      <td align="center"><img src="screenshots/tv/settings.png" width="400" /><br/><b>設定</b></td>
+      <td colspan="2" align="center"><img src="screenshots/tv/settings.png" width="400" /><br/><b>設定</b></td>
     </tr>
   </table>
 </details>
@@ -156,6 +153,12 @@ Yozuku はプロキシとして動作し、アプリからのリクエストを�
 ### リリース版のビルド（GitHub Actions）
 
 `.github/workflows/release.yml` で、署名済みのリリース版をビルドできます。署名にはリポジトリの Secrets（`KEYSTORE`、`KEYSTORE_PASSWORD`、`KEYSTORE_ALIAS`、`KEYSTORE_ALIAS_PASSWORD`）を使用します。Secrets が未設定の場合はビルドが失敗します。
+
+ワークフローは、次の 3 つの APK をビルドします（どれも同じ鍵で署名します）。
+
+- `nightzuku-<タグ>-release.apk`: 通常版（パッケージ ID `kerneldroid.nightzuku`）
+- `nightzuku-<タグ>-stealth-<パッケージ ID>.apk`: ステルス版。パッケージ ID をビルドのたびにランダムな値（`com.xxxxxxxx.xxxxxxxx` の形）にしたもので、手動実行のときは入力欄 `stealth_id` で固定の値を指定することもできます。プロバイダのオーソリティ（`kerneldroid.nightzuku.*`）は通常版と同じなので、通常版と同時にはインストールできません
+- `nightzuku-stub-<タグ>.apk`: Shizuku のパッケージ ID（`moe.shizuku.privileged.api`）があるかどうかを確認するアプリ向けの互換スタブ。上流の別リポジトリ [kerneldroid/nightzuku-stub](https://github.com/kerneldroid/nightzuku-stub) の `main` をビルドします。公式の Shizuku アプリと同時にはインストールできません
 
 - **GitHub Release として公開する**: `v` で始まるタグを push します。ビルドした APK が添付されたリリースが自動で作成されます。
 

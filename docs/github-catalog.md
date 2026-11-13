@@ -36,7 +36,7 @@ Yozuku の ADB モジュールをオンラインで探すための仕組みで�
 
 ## セキュリティ
 
-- トークンは SharedPreferences に保存されます（暗号化はしていません。エミュレーターとの互換性を優先したトレードオフです）
+- トークンは AndroidKeyStore（`AES/GCM/NoPadding`）で暗号化して保存されます。以前の暗号化されていないトークンは、起動時に移行されます
 - トークンは `ghp_`／`github_pat_` で始まり 30 文字以上かを検証します
 - トークンは logcat に記録されません
 - トークンは `api.github.com`／`github.com` のドメインにのみ送信されます（updateJson の URL には漏れません）
@@ -46,8 +46,8 @@ Yozuku の ADB モジュールをオンラインで探すための仕組みで�
 | プラットフォーム | カタログ UI | トークン設定 | 試験運用機能メニュー |
 |----------|-----------|----------------|----------|
 | スマートフォン | CatalogScreen.kt | UpdateSettingsScreen.kt | SettingsActivity から |
-| Android TV | TvCatalogScreen.kt | TvTokenSettingsScreen.kt | TvLabMenuScreen.kt |
-| WearOS | WearCatalogScreen.kt | WearTokenSettingsScreen.kt | WearSettingsScreen から |
+| Android TV | なし（モジュールの画面は削除） | なし | TvLabMenuScreen.kt |
+| WearOS | なし（モジュールの画面は削除） | なし | WearSettingsScreen から |
 
 ## API の利用
 
@@ -77,13 +77,10 @@ module/update/
 
 module/catalog/
 ├── CatalogScreen.kt            # スマートフォン向けカタログ UI
-├── TvCatalogScreen.kt          # TV 向けカタログ UI
-├── WearCatalogScreen.kt        # WearOS 向けカタログ UI
-├── TokenStore.kt               # トークンの保存
-├── WearTokenSettingsScreen.kt  # WearOS 向けトークン設定
-└── (TvTokenSettingsScreen.kt   # settings/ パッケージ内)
+└── TokenStore.kt               # トークンの保存
 
 settings/
-├── TvLabMenuScreen.kt          # TV 向け試験運用機能メニュー
-└── TvTokenSettingsScreen.kt    # TV 向けトークン設定
+└── TvLabMenuScreen.kt          # TV 向け試験運用機能メニュー
 ```
+
+> 上流の英語の文書（r62）の一覧には `TvCatalogScreen.kt` が残っていますが、このファイルはコードから削除されているため、このページでは外しています。

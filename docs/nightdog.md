@@ -86,7 +86,7 @@ Yozuku は、バックグラウンドでの監視を 2 つの部品に分けて�
   - 既定のインストール方法（`ソース` か `リリース ZIP`）
   - モジュールカタログの切り替え
   - GitHub のトークン
-- **ADB モジュールの画面**（`ModulesActivity`、`TvModulesScreen`、`WearModulesScreen`）:
+- **ADB モジュールの画面**（`ModulesActivity`。上流の英語の文書には `TvModulesScreen`、`WearModulesScreen` も書かれていますが、r62 で TV・Wear OS 向けのモジュールの画面は削除されました）:
   - 上部の状態のバナーには、次のものがあります。
     - 手動で確認するボタン
     - **すべてアップデート（N 件）** の進み具合のバー
@@ -109,8 +109,6 @@ Yozuku は、バックグラウンドでの監視を 2 つの部品に分けて�
 | 安定稼働でのリセット | 60 秒 | スターターの連続クラッシュ回数をリセットする、サーバーの稼働時間のしきい値 |
 | アップデートの確認の予約 | `JobScheduler` | ネットワークの条件付きで OS が管理する定期ジョブ（`JOB_ID_MODULE_UPDATE_CHECK = 4200`） |
 | アップデートを確認する頻度 | `MANUAL`（手動） | `ON_START`、6 時間、24 時間、168 時間に変更可能 |
-
-> 上流の英語の文書では、頻度の既定値が `DAILY`、ジョブ ID が `40921`、手動の値が `NEVER` と書かれています。このページの値は、コード（`ModuleSettings.kt`、`ModuleUpdateScheduler.kt`）に合わせています。
 
 ## 関連ファイル
 

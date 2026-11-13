@@ -155,6 +155,19 @@ fn read_self_exe() -> Option<Vec<u8>> {
 
 /// Attempts to derive `<app_dir>/base.apk` from `/proc/self/exe` (`<app_dir>/lib/<abi>/libshizuku.so`)
 /// to avoid spawning a `pm path` shell process in the common extracted-native-libs layout.
+/// Extracts the package id from `/data/app/<pkg>-<hash>/base.apk` (or the legacy
+/// `/data/app/<pkg>/base.apk`) so stealth builds do not depend on a compile-time id.
+fn derive_package_from_apk_path(apk_path: &str) -> Option<String> {
+    let parent = dirname(apk_path);
+    let name = parent.rsplit('/').next()?;
+    let package = name.split('-').next()?;
+    if package.contains('.') && !package.is_empty() {
+        Some(package.to_string())
+    } else {
+        None
+    }
+}
+
 fn derive_apk_from_self_exe() -> Option<String> {
     let exe_bytes = read_self_exe()?;
     let exe_str = std::str::from_utf8(&exe_bytes).ok()?;
@@ -190,11 +203,23 @@ fn run_server(dex_path: &str, main_class: &str, process_name: &str) {
 
     let Ok(classpath) = CString::new(dex_path) else {
         logging::loge("can't set CLASSPATH\n");
+        logging::record_smart_snapshot(
+            "STARTER_CLASSPATH",
+            "FATAL",
+            "Invalid dex_path for CLASSPATH",
+            &format!("dex_path={dex_path}"),
+        );
         exit(EXIT_FATAL_SET_CLASSPATH);
     };
 
     if unsafe { libc::setenv(c"CLASSPATH".as_ptr(), classpath.as_ptr(), 1) } != 0 {
         logging::loge("can't set CLASSPATH\n");
+        logging::record_smart_snapshot(
+            "STARTER_CLASSPATH",
+            "FATAL",
+            "libc::setenv(CLASSPATH) failed",
+            &format!("dex_path={dex_path} errno={}", misc::errno()),
+        );
         exit(EXIT_FATAL_SET_CLASSPATH);
     }
 
@@ -218,6 +243,12 @@ fn run_server(dex_path: &str, main_class: &str, process_name: &str) {
     logging::logd("exec app_process");
 
     if unsafe { libc::execvp(argv_ptrs[0], argv_ptrs.as_ptr()) } != 0 {
+        logging::record_smart_snapshot(
+            "STARTER_EXECVP",
+            "FATAL",
+            "Failed to execvp /system/bin/app_process",
+            &format!("dex_path={dex_path} main_class={main_class} errno={}", misc::errno()),
+        );
         exit(EXIT_FATAL_APP_PROCESS);
     }
 }
@@ -334,6 +365,23 @@ fn supervise_server(
     let restart_delay_secs: libc::c_uint = 5;
 
     loop {
+        // The APK path baked into this supervisor can disappear when the manager app is
+        // updated or uninstalled. Restarting app_process against the stale path only
+        // produces ClassNotFoundException/SIGABRT loops, so stop and let a fresh starter
+        // (launched from the new lib dir) take over.
+        if access(path, libc::R_OK) != 0 {
+            logging::loge(&format!(
+                "fatal: apk path is no longer accessible, stopping supervisor: {path}"
+            ));
+            logging::record_smart_snapshot(
+                "STARTER_DEX_MISSING",
+                "ERROR",
+                "Starter stopped: apk path disappeared (app updated or uninstalled)",
+                &format!("dex_path={path}\nerrno={}", misc::errno()),
+            );
+            exit(0);
+        }
+
         let pid = unsafe { libc::fork() };
         if pid == -1 {
             logging::loge("fatal: can't fork shizuku_server");
@@ -411,6 +459,18 @@ fn supervise_server(
         }
 
         restart_count += 1;
+        let signal_num = if killed_by_signal { exit_code - 128 } else { 0 };
+        logging::record_smart_snapshot(
+            "SERVER_PROCESS_CRASH",
+            if restart_count > max_restarts { "FATAL" } else { "ERROR" },
+            &format!(
+                "shizuku_server (pid {pid}) terminated unexpectedly (code={exit_code}, signal={signal_num}) after {uptime_secs}s"
+            ),
+            &format!(
+                "server_pid={pid}\nexit_code={exit_code}\nkilled_by_signal={killed_by_signal}\nsignal={signal_num}\nuptime_secs={uptime_secs}\nrestart_attempt={restart_count}/{max_restarts}\ndex_path={path}"
+            ),
+        );
+
         if restart_count > max_restarts {
             logging::loge(&format!(
                 "fatal: shizuku_server crashed {restart_count} times consecutively, giving up"
@@ -535,6 +595,7 @@ fn main() {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
         libc::signal(libc::SIGHUP, libc::SIG_IGN);
     }
+    logging::install_panic_hook();
 
     let mut apk_path = String::new();
     let mut replace_pid: Option<c_int> = None;
@@ -555,6 +616,12 @@ fn main() {
     let uid = unsafe { libc::getuid() };
     if uid != 0 && uid != 2000 {
         eprintln!("fatal: run Shizuku from non root nor adb user (uid={uid}).");
+        logging::record_smart_snapshot(
+            "STARTER_INVALID_UID",
+            "FATAL",
+            &format!("Starter executed from unauthorized uid={uid}"),
+            &format!("expected_uid=0_or_2000 actual_uid={uid}"),
+        );
         exit(EXIT_FATAL_UID);
     }
 
@@ -577,9 +644,15 @@ fn main() {
             res |= check_selinux(c"u:r:untrusted_app:s0", context, c"binder", c"transfer");
 
             if res != 0 {
+                let ctx_str = display(context);
                 eprintln!(
-                    "fatal: the su you are using does not allow app (u:r:untrusted_app:s0) to connect to su ({}) with binder.",
-                    display(context)
+                    "fatal: the su you are using does not allow app (u:r:untrusted_app:s0) to connect to su ({ctx_str}) with binder."
+                );
+                logging::record_smart_snapshot(
+                    "STARTER_SELINUX_BLOCKED",
+                    "FATAL",
+                    "SELinux policy blocks binder IPC between untrusted_app and su context",
+                    &format!("su_context={ctx_str} source_context=u:r:untrusted_app:s0"),
                 );
                 selinux::freecon(context);
                 exit(EXIT_FATAL_BINDER_BLOCKED_BY_SELINUX);
@@ -612,8 +685,12 @@ fn main() {
         apk_path = derived;
     }
 
+    if let Some(package) = derive_package_from_apk_path(&apk_path) {
+        logging::set_manager_package(&package);
+    }
+
     if apk_path.is_empty() {
-        let command = c_arg(&format!("pm path {PACKAGE_NAME}"));
+        let command = c_arg(&format!("pm path {}", logging::manager_package()));
         let pipe = unsafe { libc::popen(command.as_ptr(), c"r".as_ptr()) };
         if !pipe.is_null() {
             let mut line = [0u8; libc::PATH_MAX as usize];
@@ -633,12 +710,24 @@ fn main() {
 
     if apk_path.is_empty() {
         eprintln!("fatal: can't get path of manager");
+        logging::record_smart_snapshot(
+            "STARTER_APK_PATH_MISSING",
+            "FATAL",
+            "Starter failed to resolve base.apk path for manager package",
+            &format!("package={}", logging::manager_package()),
+        );
         exit(EXIT_FATAL_PM_PATH);
     }
 
     println!("info: apk path is {apk_path}");
     if access(&apk_path, libc::R_OK) != 0 {
         eprintln!("fatal: can't access manager {apk_path}");
+        logging::record_smart_snapshot(
+            "STARTER_APK_PATH_INACCESSIBLE",
+            "FATAL",
+            "Starter cannot read resolved manager base.apk",
+            &format!("apk_path={apk_path} errno={}", misc::errno()),
+        );
         exit(EXIT_FATAL_PM_PATH);
     }
 
@@ -686,5 +775,26 @@ mod tests {
         assert!(read_exact_retry(fds[0], &mut out));
         unsafe { libc::close(fds[0]) };
         assert_eq!(i32::from_ne_bytes(out), 424242);
+    }
+
+    #[test]
+    fn test_format_smart_snapshot_structure() {
+        let block = logging::format_smart_snapshot(
+            1700000000000,
+            "SERVER_PROCESS_CRASH",
+            "ERROR",
+            "shizuku_server exited with 139",
+            "server_pid=1234\nsignal=11",
+        );
+        assert!(block.starts_with("===SMART_SNAPSHOT_BEGIN===\n"));
+        assert!(block.contains("SOURCE: RUST_STARTER\n"));
+        assert!(block.contains("CATEGORY: SERVER_PROCESS_CRASH\n"));
+        assert!(block.contains("SEVERITY: ERROR\n"));
+        assert!(block.contains("SUMMARY: shizuku_server exited with 139\n"));
+        assert!(block.ends_with("===SMART_SNAPSHOT_END===\n"));
+        let b64 = logging::base64_encode(block.as_bytes());
+        assert!(!b64.is_empty());
+        assert!(!b64.contains(' '));
+        assert!(!b64.contains('\n'));
     }
 }

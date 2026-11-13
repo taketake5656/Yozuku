@@ -46,6 +46,11 @@
     <string name="dialog_adb_invalid_port">ポートは 1〜65535 の整数で指定してください。</string>
     <string name="adb_pairing">ペア設定</string>
     <string name="dialog_adb_pairing_title">デバイスとペア設定</string>
+    <string name="adb_pairing_auto_code">コードを自動で検出</string>
+    <string name="adb_pairing_auto_waiting">ペア設定コードを待っています。「ワイヤレスデバッグ」→「ペア設定コードによるデバイスのペア設定」を開いてください。</string>
+    <string name="adb_pairing_auto_timeout">ペア設定コードを検出できませんでした。もう一度お試しください。</string>
+    <string name="adb_pairing_auto_enable_accessibility">「ユーザー補助」で Yozuku のペア設定を有効にしてから、「ワイヤレスデバッグ」→「ペア設定コードによるデバイスのペア設定」を開いてください。</string>
+    <string name="adb_pairing_auto_description">Yozuku からの要求を受けてから 2 分間、システムの設定画面のダイアログからワイヤレスデバッグのペア設定コードを読み取ります。ペア設定が終わったとき、時間切れになったとき、要求がないのに起動されたときは、自動的にオフになります。</string>
     <string name="dialog_adb_pairing_discovery">ペア設定サービスを検索中</string>
     <string name="dialog_adb_pairing_paring_code">ペア設定コード</string>
     <string name="paring_code_is_wrong">ペア設定コードが間違っています。</string>
@@ -471,11 +476,22 @@
     <string name="app_control_last_connected_never">接続したことがありません</string>
     <string name="app_control_signer_sha256">署名証明書の SHA-256</string>
     <string name="stub_notice_title">お願い: 必ずお読みください</string>
-    <string name="stub_notice_message"><![CDATA[Yozuku は Shizuku API を使うアプリでも動きますが、ほかのアプリに Shizuku のパッケージ ID があるように見せる「スタブ」は用意できません。通常の Shizuku アプリ（バージョンは問いません）をインストールしてください。Shizuku を有効にする必要はなく、入れておくだけでかまいません。ライセンス上の懸念があり、スタブを作って維持するつもりもないため、原作者の方針としてスタブは同梱していません。]]></string>
+    <string name="stub_notice_message"><![CDATA[Yozuku は Shizuku API を使うアプリでも動きます。Shizuku のパッケージ ID があるかどうかを確認するアプリを使う場合は、GitHub Releases から別の APK「Nightzuku Stub」をダウンロードしてください。スタブはライセンスと保守の都合により、Google Play では配布しておらず、Yozuku のソースやアプリにも含めていません。公式の Shizuku アプリと同時にインストールしないでください。]]></string>
     <string name="stub_notice_confirm">わかりました</string>
     <string name="modules_catalog_danger_prompt">それでも続行しますか？</string>
     <string name="modules_catalog_readme_unavailable">README がありません</string>
     <string name="modules_webview_error_message">この Wear OS デバイスでは WebView がサポートされていないか、初期化中にクラッシュしました。\n\n%1$s</string>
+    <!-- Smart Logs -->
+    <string name="smart_log_dialog_title">スマートログ</string>
+    <string name="smart_log_dialog_message_single">問題が発生しました。問題がなければ、このまま閉じてください。何かが動かない場合は、ログをコピーして Issues / PR に送ってください。</string>
+    <string name="smart_log_dialog_message_multiple">問題が発生しました。複数のエラー（%1$d 件）が発生したため、区切り記号とスナップショットの時刻で区切って 1 つのログにまとめました。問題がなければ、このまま閉じてください。何かが動かない場合は、ログをコピーして Issues / PR に送ってください。</string>
+    <string name="smart_log_window_header">スマートログ（スナップショット %1$d 件）</string>
+    <string name="smart_log_button_copy">コピー</string>
+    <string name="smart_log_button_clear">消去</string>
+    <string name="smart_log_button_close">閉じる</string>
+    <string name="smart_log_button_open_issues">Issues / PR に送る</string>
+    <string name="smart_log_home_summary_clean">スマートログ: エラーは検出されていません（タップしてスナップショットを表示）</string>
+    <string name="smart_log_home_summary_errors">スマートログ: エラーのスナップショットを %1$d 件記録しました（イベントは合計 %2$d 件）。タップして確認してください</string>
 
     <!-- Theme strings (app resources since upstream r60; dark_theme_auto_* still override rikka core) -->
     <string name="dark_theme">ダークテーマ</string>

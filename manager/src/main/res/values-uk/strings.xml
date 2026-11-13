@@ -45,6 +45,11 @@
     <string name="dialog_adb_invalid_port">Порт має бути цілим числом від 1 до 65535.</string>
     <string name="adb_pairing">Спряження</string>
     <string name="dialog_adb_pairing_title">Спряження з пристроєм</string>
+    <string name="adb_pairing_auto_code">Автовизначення коду</string>
+    <string name="adb_pairing_auto_waiting">Очікування коду спряження. Відкрийте \"Бездротове налагодження\" → \"Спряження пристрою за кодом спряження\".</string>
+    <string name="adb_pairing_auto_timeout">Код спряження не виявлено. Спробуйте ще раз.</string>
+    <string name="adb_pairing_auto_enable_accessibility">Увімкніть спряження Yozuku в розділі \"Спеціальні можливості\", потім відкрийте \"Бездротове налагодження\" → \"Спряження пристрою за кодом спряження\".</string>
+    <string name="adb_pairing_auto_description">Зчитує код спряження бездротового налагодження з діалогу системних налаштувань протягом двох хвилин після запиту від Yozuku. Вимикається сам після спряження, після закінчення часу або якщо запущений без запиту.</string>
     <string name="dialog_adb_pairing_discovery">Пошук служби спряження</string>
     <string name="dialog_adb_pairing_paring_code">Код спряження</string>
     <string name="paring_code_is_wrong">Неправильний код спряження.</string>
@@ -404,7 +409,7 @@
     <string name="app_management_search_empty">Відповідних застосунків не знайдено.</string>
     <string name="app_management_section_native">Нативний протокол (Nightzuku API)</string>
     <string name="app_management_section_legacy">Застарілий протокол (Shizuku API)</string>
-    <string name="app_management_hold_hint">Утримуйте застосунок 3–4 сек. для глибокого налаштування</string>
+    <string name="app_management_hold_hint">Утримуйте застосунок 2 сек. для глибокого налаштування</string>
     <string name="app_management_badge_native">Native Wire</string>
     <string name="app_management_badge_legacy">Legacy Wire</string>
     <string name="app_control_title">Контроль застосунку</string>
@@ -442,7 +447,7 @@
     <string name="app_control_last_connected_never">Ніколи не підключалося</string>
     <string name="app_control_signer_sha256">SHA-256 сертифіката підпису</string>
     <string name="stub_notice_title">Гей, друже, прочитай!</string>
-    <string name="stub_notice_message"><![CDATA[Yozuku вміє працювати з клієнтами, що використовують Shizuku API, АЛЕ не вміє активувати stub, щоб інші застосунки бачили ID пакета Shizuku. Бажано встановити звичайний Shizuku будь-якої версії — активувати його не потрібно, він буде пустушкою. Я не роблю пустушку з принципу: проблема з ліцензією та небажання її створювати й підтримувати.]]></string>
+    <string name="stub_notice_message"><![CDATA[Yozuku вміє працювати з клієнтами, що використовують Shizuku API. Якщо застосунок перевіряє наявність пакета Shizuku, завантажте окремий APK Nightzuku Stub з GitHub Releases. Stub недоступний у Google Play і не входить до вихідного коду та застосунку Yozuku через ліцензійні обмеження й витрати на підтримку. Не встановлюйте його разом з офіційним застосунком Shizuku.]]></string>
     <string name="stub_notice_confirm">Зрозуміло</string>
     <string name="translation_contributors">kerneldroid</string>
     <string name="guide_quick_start">Швидкий старт</string>
@@ -481,4 +486,15 @@
     <string name="modules_webview_error_message">WebView не підтримується або аварійно завершився під час ініціалізації на цьому пристрої Wear OS.\n\n%1$s</string>
     <string name="dialog_adb_discovered_port">Знайдено порт: %1$d</string>
     <string name="modules_catalog_installed">Встановлено</string>
+    <!-- Smart Logs -->
+    <string name="smart_log_dialog_title">Smart Logs — Розумний знімок</string>
+    <string name="smart_log_dialog_message_single">Упс, щось пішло не так. Якщо все нормально — закрий, якщо погано — скопіюй і надішли в Issues / PR.</string>
+    <string name="smart_log_dialog_message_multiple">Упс, щось пішло не так. З\'являється безліч помилок (%1$d) — їх об\'єднано в один лог і розділено символами та часом знімка. Якщо все нормально — закрий, якщо погано — скопіюй і надішли в Issues / PR.</string>
+    <string name="smart_log_window_header">Розумний лог (знімків: %1$d)</string>
+    <string name="smart_log_button_copy">Скопіювати</string>
+    <string name="smart_log_button_clear">Очистити</string>
+    <string name="smart_log_button_close">Закрити</string>
+    <string name="smart_log_button_open_issues">Надіслати в Issues / PR</string>
+    <string name="smart_log_home_summary_clean">Smart Logs активний: помилок не виявлено (натисніть для перегляду знімка)</string>
+    <string name="smart_log_home_summary_errors">Smart Logs перехопив знімків помилок: %1$d (усього подій: %2$d) — натисніть для перегляду</string>
 </resources>

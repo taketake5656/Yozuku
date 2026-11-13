@@ -86,7 +86,7 @@
     <string name="wear_catalog_sort_by">排序方式</string>
     <string name="wear_catalog_filter">筛选</string>
     <string name="stub_notice_title">嘿，朋友，请读一下！</string>
-    <string name="stub_notice_message"><![CDATA[Yozuku 可以与使用 Shizuku API 的客户端配合工作，但它无法激活 stub 来让其他应用看到 Shizuku 包 ID。建议安装任意版本的普通 Shizuku；无需激活，它只作为空壳存在。出于原则我不提供这个空壳：涉及许可证问题，也不希望创建和维护它。]]></string>
+    <string name="stub_notice_message"><![CDATA[Yozuku 可以与使用 Shizuku API 的客户端配合工作。如果某个应用会检查 Shizuku 的包 ID，请从 GitHub Releases 下载单独的 Nightzuku Stub APK。由于许可证和维护方面的限制，该 stub 不在 Google Play 上提供，也未包含在 Yozuku 的源代码或应用中。请勿与官方 Shizuku 应用同时安装。]]></string>
     <string name="stub_notice_confirm">知道了</string>
     <string name="translation_contributors">kerneldroid</string>
     <string name="home_status_service_version">版本 %2$s，%1$s</string>
@@ -123,6 +123,11 @@
     <string name="dialog_adb_invalid_port">端口必须是 1 到 65535 之间的整数。</string>
     <string name="adb_pairing">配对</string>
     <string name="dialog_adb_pairing_title">与设备配对</string>
+    <string name="adb_pairing_auto_code">自动检测配对码</string>
+    <string name="adb_pairing_auto_waiting">正在等待配对码。请打开“无线调试”→“使用配对码配对设备”。</string>
+    <string name="adb_pairing_auto_timeout">未检测到配对码，请重试。</string>
+    <string name="adb_pairing_auto_enable_accessibility">请在“无障碍”中启用 Yozuku 配对，然后打开“无线调试”→“使用配对码配对设备”。</string>
+    <string name="adb_pairing_auto_description">在 Yozuku 发出请求后的两分钟内，从系统设置的对话框中读取无线调试配对码。配对完成、超时或在没有请求的情况下启动时，会自动关闭。</string>
     <string name="dialog_adb_pairing_discovery">正在搜索配对服务</string>
     <string name="dialog_adb_pairing_paring_code">配对码</string>
     <string name="paring_code_is_wrong">配对码错误。</string>
@@ -444,4 +449,15 @@
     <string name="modules_webview_error_message">此 Wear OS 设备不支持 WebView 或在初始化时崩溃。\n\n%1$s</string>
     <string name="dialog_adb_discovered_port">发现的端口：%1$d</string>
     <string name="modules_catalog_installed">已安装</string>
+    <!-- Smart Logs -->
+    <string name="smart_log_dialog_title">智能日志 (Smart Logs)</string>
+    <string name="smart_log_dialog_message_single">哎呀，出了点问题。如果一切正常 — 请关闭；如果出现故障 — 请复制并提交至 Issues / PR。</string>
+    <string name="smart_log_dialog_message_multiple">哎呀，出了点问题。检测到多个错误（%1$d），已按分隔符与快照时间合并为单份智能日志。如果一切正常 — 请关闭；如果出现故障 — 请复制并提交至 Issues / PR。</string>
+    <string name="smart_log_window_header">智能日志（快照：%1$d）</string>
+    <string name="smart_log_button_copy">复制</string>
+    <string name="smart_log_button_clear">清除</string>
+    <string name="smart_log_button_close">关闭</string>
+    <string name="smart_log_button_open_issues">提交至 Issues / PR</string>
+    <string name="smart_log_home_summary_clean">Smart Logs 已启用：未检测到错误（点击查看快照）</string>
+    <string name="smart_log_home_summary_errors">Smart Logs 已捕获 %1$d 个错误快照（共 %2$d 次事件）— 点击查看</string>
 </resources>

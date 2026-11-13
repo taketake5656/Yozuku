@@ -85,7 +85,7 @@ updateJson=https://example.com/update.json
 
 ## 実行環境
 
-スクリプトは Yozuku サーバーのプロセス生成機能を通じて実行されます（`sh /path/to/module/action.sh` または `sh /path/to/module/service.sh`）。作業ディレクトリはモジュールのディレクトリです。
+スクリプトは Yozuku サーバーのプロセス生成機能を通じて実行されます。スクリプトの内容は標準入力から `sh -s <モジュール ID>` に渡され、作業ディレクトリはモジュールのディレクトリです。こうすることで `argv` の 128 KB の制限を避け、`$0` がモジュール ID になります。
 
 スクリプトを実行するたびに渡される環境変数:
 
@@ -106,6 +106,8 @@ NIGHTZUKU_PROVIDER_AUTHORITY=kerneldroid.nightzuku.nightzuku
 NIGHTZUKU_SIGNER_SHA256=<アプリの署名証明書の SHA-256>
 NIGHTZUKU_SESSION_TOKEN=<モジュール ID に結び付いた 64 文字の HMAC-SHA256 トークン>
 ```
+
+> 上流の英語の文書（r62）では `NIGHTZUKU_PROVIDER_AUTHORITY` が `kerneldroid.nightzuku.shizuku` と書かれていますが、コード（`ModuleRuntimeUtils.kt`）が設定する値は `kerneldroid.nightzuku.nightzuku` です。このページはコードに合わせています。どちらのオーソリティも同じプロバイダ（`ShizukuManagerProvider`）を指します。
 
 モジュール内のファイルには、すべて `MODDIR` を使用してください。`/data/adb/modules` のような root 向けのパスを前提にしないでください。
 

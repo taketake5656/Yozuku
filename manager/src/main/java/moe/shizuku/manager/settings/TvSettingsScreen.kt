@@ -24,7 +24,6 @@ import androidx.tv.material3.MaterialTheme as TvMaterialTheme
 import androidx.tv.material3.Surface as TvSurface
 import androidx.tv.material3.Text as TvText
 import moe.shizuku.manager.R
-import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.ui.compose.ShizukuIcon
 
 @Composable
@@ -40,19 +39,7 @@ fun TvSettingsScreen(
     onBlackNightThemeChange: (Boolean) -> Unit,
     useSystemColor: Boolean,
     onUseSystemColorChange: (Boolean) -> Unit,
-    moduleAccessMode: ModuleSettings.AccessMode,
-    onModuleAccessModeClick: () -> Unit,
-    onCustomPermissionsClick: () -> Unit,
-    allowBackgroundActions: Boolean,
-    onAllowBackgroundActionsChange: (Boolean) -> Unit,
-    backgroundCheckEnabled: Boolean,
-    onBackgroundCheckEnabledChange: (Boolean) -> Unit,
-    recommandWebUi: Boolean,
-    onRecommandWebUiChange: (Boolean) -> Unit,
-    recommandAction: Boolean,
-    onRecommandActionChange: (Boolean) -> Unit,
-    onLabFeaturesClick: () -> Unit,
-    onGitHubTokenClick: () -> Unit
+    onLabFeaturesClick: () -> Unit
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
 
@@ -132,58 +119,6 @@ fun TvSettingsScreen(
             }
 
             item {
-                TvSettingsGroupTitle(stringResource(R.string.modules_settings_title))
-            }
-            item {
-                TvSettingsClickRow(
-                    title = stringResource(R.string.modules_access_mode),
-                    summary = stringResource(moduleAccessMode.labelRes),
-                    onClick = onModuleAccessModeClick
-                )
-            }
-            if (moduleAccessMode == ModuleSettings.AccessMode.CUSTOM) {
-                item {
-                    TvSettingsClickRow(
-                        title = stringResource(R.string.modules_custom_permissions),
-                        summary = stringResource(R.string.modules_custom_permissions_summary),
-                        onClick = onCustomPermissionsClick
-                    )
-                }
-            }
-            item {
-                TvSettingsToggleRow(
-                    title = stringResource(R.string.modules_background_actions),
-                    summary = stringResource(R.string.modules_background_actions_summary),
-                    checked = allowBackgroundActions,
-                    onCheckedChange = onAllowBackgroundActionsChange
-                )
-            }
-            item {
-                TvSettingsToggleRow(
-                    title = stringResource(R.string.modules_background_check_title),
-                    summary = stringResource(R.string.modules_background_check_summary),
-                    checked = backgroundCheckEnabled,
-                    onCheckedChange = onBackgroundCheckEnabledChange
-                )
-            }
-            item {
-                TvSettingsToggleRow(
-                    title = stringResource(R.string.modules_recommand_webui),
-                    summary = stringResource(R.string.modules_recommand_webui_summary),
-                    checked = recommandWebUi,
-                    onCheckedChange = onRecommandWebUiChange
-                )
-            }
-            item {
-                TvSettingsToggleRow(
-                    title = stringResource(R.string.modules_recommand_action),
-                    summary = stringResource(R.string.modules_recommand_action_summary),
-                    checked = recommandAction,
-                    onCheckedChange = onRecommandActionChange
-                )
-            }
-
-            item {
                 TvSettingsGroupTitle(stringResource(R.string.lab_features_title))
             }
             item {
@@ -194,16 +129,6 @@ fun TvSettingsScreen(
                 )
             }
 
-            item {
-                TvSettingsGroupTitle(stringResource(R.string.update_settings_github))
-            }
-            item {
-                TvSettingsClickRow(
-                    title = stringResource(R.string.update_settings_github_pat),
-                    summary = stringResource(R.string.update_settings_github_pat_title),
-                    onClick = onGitHubTokenClick
-                )
-            }
         }
     }
 }

@@ -23,6 +23,7 @@ import android.os.SystemClock
 import java.util.concurrent.ConcurrentHashMap
 import kerneldroid.nightzuku.api.LegacyParcelCodec
 import kerneldroid.nightzuku.api.NightProtocol
+import kerneldroid.nightzuku.util.HiddenApiIntrospector
 import kerneldroid.nightzuku.util.PackageSignatureVerifier
 import moe.shizuku.api.BinderContainer
 import moe.shizuku.server.IRemoteProcess
@@ -37,6 +38,7 @@ import rikka.shizuku.ShizukuApiConstants
 import rikka.shizuku.common.util.InstalledPackagesCompat
 import rikka.shizuku.nightdog.NightDog
 import rikka.shizuku.server.util.Android17Compat
+import rikka.shizuku.server.util.ServerSmartLogCollector
 import rikka.shizuku.server.util.HandlerUtil
 import rikka.shizuku.server.util.IContentProviderUtils
 import rikka.shizuku.server.util.OsUtils
@@ -63,8 +65,11 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         HandlerUtil.setMainHandler(mainHandler)
 
         Service.LOGGER.i("starting server...")
+        HiddenApiIntrospector.exemptHiddenApis()
+        ServerSmartLogCollector.init()
 
         waitSystemService("package")
+        ManagerIdentity.resolve()
         waitSystemService(Context.ACTIVITY_SERVICE)
         waitSystemService(Context.USER_SERVICE)
         waitSystemService(Context.APP_OPS_SERVICE)
@@ -72,11 +77,21 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         val managerPi = getManagerPackageInfo()
         val foundAi = managerPi?.applicationInfo
         if (managerPi == null || foundAi == null) {
+            ServerSmartLogCollector.recordServerError(
+                category = "MANAGER_LOOKUP_FAILED",
+                summary = "shizuku_server could not resolve manager PackageInfo/ApplicationInfo on startup",
+                extraDetails = ServerSmartLogCollector.getOrRunQprCompatAudit()
+            )
             System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
         }
         val snapshot = PackageSignatureVerifier.extractSnapshot(managerPi!!, 0)
         if (snapshot == null) {
             Service.LOGGER.e("Failed to extract cryptographic signature for manager app, exiting...")
+            ServerSmartLogCollector.recordServerError(
+                category = "MANAGER_SIGNATURE_EXTRACTION_FAILED",
+                summary = "Failed to extract cryptographic signing certificate for manager package",
+                extraDetails = "packageName=${managerPi.packageName}"
+            )
             System.exit(ServerConstants.MANAGER_APP_NOT_FOUND)
         }
         managerBaseline = PackageSignatureVerifier.Baseline.fromSnapshot(snapshot!!)
@@ -94,11 +109,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         restorePersistedAccessTimers()
 
-        ApkChangedObservers.start(ai.sourceDir, object : ApkChangedListener {
-            override fun onApkChanged() {
-                reconcileManagerAndClients()
-            }
-        })
+        // Package changes are handled by startPackageReconciler() every 3s. inotify
+        // (FileObserver) on /data/app is blocked by SELinux for uid 2000 (shell), so
+        // watching the APK directory only produced an AVC denial and no events.
 
         BinderSender.register(this, nightEndpoint)
 
@@ -270,7 +283,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     internal fun verifyManagerSignature(): Boolean {
         val probe = try {
             val pi = Android17Compat.getPackageInfoOrThrow(
-                ServerConstants.MANAGER_APPLICATION_ID,
+                ManagerIdentity.packageName,
                 PackageSignatureVerifier.signatureLookupFlags(),
                 0
             )
@@ -494,7 +507,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         packageName: String,
         protocolVersion: Int
     ): ClientRecord? {
-        val isManager = ServerConstants.MANAGER_APPLICATION_ID == packageName &&
+        val isManager = ManagerIdentity.packageName == packageName &&
             UserHandleCompat.getUserId(callingUid) == 0 &&
             verifyManagerSignature()
 
@@ -551,7 +564,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             throw SecurityException("Request package $requestPackageName does not belong to uid $callingUid")
         }
 
-        val isManager = ServerConstants.MANAGER_APPLICATION_ID == requestPackageName &&
+        val isManager = ManagerIdentity.packageName == requestPackageName &&
             UserHandleCompat.getUserId(callingUid) == 0 &&
             verifyManagerSignature()
 
@@ -614,7 +627,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
     private fun grantManagerSecureSettings(callingUid: Int) {
         try {
             Android17Compat.grantRuntimePermission(
-                ServerConstants.MANAGER_APPLICATION_ID,
+                ManagerIdentity.packageName,
                 Manifest.permission.WRITE_SECURE_SETTINGS,
                 UserHandleCompat.getUserId(callingUid)
             )
@@ -672,7 +685,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         val ai = Android17Compat.getApplicationInfo(clientRecord.packageName, 0L, userId) ?: return
 
-        val pi = Android17Compat.getPackageInfo(ServerConstants.MANAGER_APPLICATION_ID, 0L, userId)
+        val pi = Android17Compat.getPackageInfo(ManagerIdentity.packageName, 0L, userId)
         val userInfo = UsersCompat.getUserInfo(userId)
         val isWorkProfileUser = if (userInfo != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -705,8 +718,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         openPrompts.entries.removeIf { now - it.value > PROMPT_ANSWER_WINDOW_MS }
         openPrompts[Triple(callingUid, callingPid, requestCode)] = now
 
-        val intent = Intent(ServerConstants.REQUEST_PERMISSION_ACTION)
-            .setPackage(ServerConstants.MANAGER_APPLICATION_ID)
+        val intent = Intent(ManagerIdentity.requestPermissionAction)
+            .setPackage(ManagerIdentity.packageName)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
             .putExtra("uid", callingUid)
             .putExtra("pid", callingPid)
@@ -1041,7 +1054,9 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 record.allowed = !paused
                 pushPermissionState(record, false, caps)
             }
-            syncRuntimePermissionsForUid(uid, false)
+            // Keep Android's runtime permission in sync with the one-time grant; it is revoked
+            // again when the client process dies.
+            syncRuntimePermissionsForUid(uid, true)
         } else {
             clientManager.clearOneTimeGrant(uid)
             configManager.update(uid, uidPackages, ConfigManager.MASK_PERMISSION, ConfigManager.FLAG_ALLOWED)
@@ -1076,7 +1091,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             for (pi in InstalledPackagesCompat.getInstalledPackagesNoThrow(
                 (PackageManager.GET_META_DATA or PackageManager.GET_PERMISSIONS).toLong(), user
             )) {
-                if (ServerConstants.MANAGER_APPLICATION_ID == pi.packageName) continue
+                if (ManagerIdentity.packageName == pi.packageName) continue
                 val applicationInfo = pi.applicationInfo ?: continue
 
                 val uid = applicationInfo.uid
@@ -1330,6 +1345,27 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
             BinderSender.dispatchToUid(targetUid, targetPid)
             replyParcel.writeNoException()
             return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_getSmartLogs) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("getSmartLogs", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            val bundle = ServerSmartLogCollector.buildSmartLogsBundle()
+            replyParcel.writeNoException()
+            replyParcel.writeBundle(bundle)
+            return true
+        } else if (code == ServerConstants.BINDER_TRANSACTION_clearSmartLogs) {
+            val replyParcel = reply!!
+            if (!checkCallerManagerPermission("clearSmartLogs", Binder.getCallingUid(), Binder.getCallingPid())) {
+                replyParcel.writeException(SecurityException("Permission denied"))
+                return true
+            }
+            data.enforceInterface(ShizukuApiConstants.BINDER_DESCRIPTOR)
+            ServerSmartLogCollector.clearSmartLogs()
+            replyParcel.writeNoException()
+            return true
         }
         return super.onTransact(code, data, reply, flags)
     }
@@ -1370,6 +1406,13 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
                         override fun onFatalFault(reason: String) {
                             Service.LOGGER.e("NightDog detected fatal fault (%s), terminating server for recovery", reason)
+                            ServerSmartLogCollector.recordServerError(
+                                category = "NIGHTDOG_FATAL_FAULT",
+                                summary = "NightDog watchdog triggered server recovery due to fatal fault: $reason",
+                                extraDetails = "reason=$reason\n" +
+                                    "boundServices=${NightDog.getBoundServiceNames().joinToString()}\n" +
+                                    "totalRebinds=${NightDog.getTotalRebinds()}"
+                            )
                         }
                     }
                 )
@@ -1415,6 +1458,8 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         @JvmStatic
         fun main(args: Array<String>) {
             DdmHandleAppName.setAppName("shizuku_server", 0)
+            HiddenApiIntrospector.exemptHiddenApis()
+            ServerSmartLogCollector.init()
             RishConfig.setLibraryPath(System.getProperty("shizuku.library.path"))
 
             Looper.prepareMainLooper()
@@ -1436,7 +1481,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
         @JvmStatic
         fun getManagerPackageInfo(): PackageInfo? {
             return Android17Compat.getPackageInfo(
-                ServerConstants.MANAGER_APPLICATION_ID,
+                ManagerIdentity.packageName,
                 PackageSignatureVerifier.signatureLookupFlags(),
                 0
             )
@@ -1444,7 +1489,7 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         @JvmStatic
         fun getManagerApplicationInfo(): ApplicationInfo? {
-            return Android17Compat.getApplicationInfo(ServerConstants.MANAGER_APPLICATION_ID, 0L, 0)
+            return Android17Compat.getApplicationInfo(ManagerIdentity.packageName, 0L, 0)
         }
 
         private fun sendBinderToClient(legacyBinder: Binder, nightBinder: Binder, userId: Int) {
@@ -1486,13 +1531,13 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
 
         @JvmStatic
         fun sendBinderToManager(legacyBinder: Binder, nightBinder: Binder, userId: Int) {
-            sendBinderToUserApp(ClientRouting.Wire.NIGHTZUKU, nightBinder, ServerConstants.MANAGER_APPLICATION_ID, userId, true)
-            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, legacyBinder, ServerConstants.MANAGER_APPLICATION_ID, userId, false)
+            sendBinderToUserApp(ClientRouting.Wire.NIGHTZUKU, nightBinder, ManagerIdentity.packageName, userId, true)
+            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, legacyBinder, ManagerIdentity.packageName, userId, false)
         }
 
         @JvmStatic
         fun sendBinderToManager(binder: Binder, userId: Int) {
-            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, binder, ServerConstants.MANAGER_APPLICATION_ID, userId, true)
+            sendBinderToUserApp(ClientRouting.Wire.SHIZUKU, binder, ManagerIdentity.packageName, userId, true)
         }
 
         @JvmStatic
@@ -1515,7 +1560,13 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 Service.LOGGER.e(tr, "Failed to add %d:%s to power save temp whitelist", userId, packageName)
             }
 
-            val name = packageName + ClientRouting.providerSuffix(wire)
+            // Manager provider authorities are fixed so native clients keep working with
+            // stealth package ids; client providers stay in their own package.
+            val name = if (packageName == ManagerIdentity.packageName) {
+                ManagerIdentity.AUTHORITY_BASE + ClientRouting.providerSuffix(wire)
+            } else {
+                packageName + ClientRouting.providerSuffix(wire)
+            }
             var provider: IContentProvider? = null
             val token: IBinder? = null
 
@@ -1570,6 +1621,13 @@ class ShizukuService : Service<ShizukuUserServiceManager, ShizukuClientManager, 
                 }
             } catch (tr: Throwable) {
                 Service.LOGGER.e(tr, "failed send binder (%s) to user app %s in user %d", wire.name, packageName, userId)
+                if (packageName == ManagerIdentity.packageName) {
+                    ServerSmartLogCollector.recordServerError(
+                        category = "SEND_BINDER_MANAGER_FAILED",
+                        summary = "Failed to send ${wire.name} binder to manager app in user $userId",
+                        throwable = tr
+                    )
+                }
             } finally {
                 if (provider != null) {
                     try {

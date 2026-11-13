@@ -53,11 +53,33 @@ import moe.shizuku.manager.adb.AdbInvalidPairingCodeException
 import moe.shizuku.manager.adb.AdbKey
 import moe.shizuku.manager.adb.AdbKeyException
 import moe.shizuku.manager.adb.AdbMdns
+import moe.shizuku.manager.adb.AdbPairingAutoDetect
 import moe.shizuku.manager.adb.AdbPairingClient
 import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.adb.PreferenceAdbKeyStore
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import moe.shizuku.manager.ui.compose.MonospaceLog
+import moe.shizuku.manager.ui.compose.ShizukuIcon
 import moe.shizuku.manager.utils.EnvironmentUtils
+import moe.shizuku.manager.utils.SmartLogManager
 import java.net.ConnectException
 
 @Composable
@@ -609,6 +631,7 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
     var portError by remember { mutableStateOf<String?>(null) }
     var pairingCodeError by remember { mutableStateOf<String?>(null) }
     var isPairing by remember { mutableStateOf(false) }
+    var autoArmed by remember { mutableStateOf(AdbPairingAutoDetect.isArmed(context)) }
 
     LaunchedEffect(discoveredPort) {
         if (discoveredPort in 1..65535) portText = discoveredPort.toString()
@@ -645,14 +668,22 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
                         AdbPairingClient(host, p, pairingCode, key).use { client ->
                             client.start()
                         }
-                    }.onSuccess {
-                        if (it) result.postValue(PairingStatus.Success)
-                        else result.postValue(PairingStatus.Error(Exception("Pairing failed")))
+                    }.onSuccess { ok ->
+                        if (ok) {
+                            result.postValue(PairingStatus.Success)
+                        } else {
+                            val err = Exception("Pairing handshake failed")
+                            SmartLogManager.recordPairingError("HomeAdbPairDialog.handshake", host, p, err)
+                            result.postValue(PairingStatus.Error(err))
+                        }
                     }.onFailure {
+                        SmartLogManager.recordPairingError("HomeAdbPairDialog.exchange", host, p, it)
                         result.postValue(PairingStatus.Error(it))
                     }
                 } catch (e: Throwable) {
-                    result.postValue(PairingStatus.Error(AdbKeyException(e)))
+                    val keyErr = AdbKeyException(e)
+                    SmartLogManager.recordPairingError("HomeAdbPairDialog.keyInit", "127.0.0.1", p, keyErr)
+                    result.postValue(PairingStatus.Error(keyErr))
                 }
             }
         }
@@ -728,6 +759,28 @@ fun HomeAdbPairDialog(onDismiss: () -> Unit) {
                             supportingText = portError?.let { { Text(it) } },
                             enabled = !isPairing
                         )
+
+                        val autoEnabled = AdbPairingAutoDetect.isServiceEnabled(context)
+                        TvButton(
+                            onClick = {
+                                autoArmed = true
+                                AdbPairingAutoDetect.arm(context)
+                                if (autoEnabled) {
+                                    AdbPairingAutoDetect.openDevelopmentSettings(context)
+                                } else {
+                                    AdbPairingAutoDetect.openAccessibilitySettings(context)
+                                }
+                            },
+                            enabled = !isPairing
+                        ) {
+                            TvText(stringResource(R.string.adb_pairing_auto_code))
+                        }
+                        if (autoArmed) {
+                            TvText(
+                                text = stringResource(R.string.adb_pairing_auto_waiting),
+                                style = TvMaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 },
                 confirmButton = {
@@ -881,6 +934,223 @@ fun HomeErrorDialog(message: String, onDismiss: () -> Unit) {
                     Text(stringResource(android.R.string.ok))
                 }
             }
+        )
+    }
+}
+
+
+@Composable
+fun SmartLogRecoveryDialog(
+    logText: String,
+    snapshotCount: Int,
+    totalErrorEvents: Int,
+    isMultiError: Boolean,
+    onCopy: () -> Unit,
+    onClear: () -> Unit,
+    onOpenIssues: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val isWatch = EnvironmentUtils.isWatch(context)
+    val isTv = EnvironmentUtils.isTV(context)
+    val headerMessage = if (isMultiError) {
+        stringResource(R.string.smart_log_dialog_message_multiple, totalErrorEvents.coerceAtLeast(2))
+    } else {
+        stringResource(R.string.smart_log_dialog_message_single)
+    }
+    val logScrollState = rememberScrollState()
+
+    if (isWatch) {
+        moe.shizuku.manager.ui.compose.WearShizukuTheme {
+            WearAlertDialog(
+                visible = true,
+                onDismissRequest = onDismiss,
+                title = { WearText(stringResource(R.string.smart_log_dialog_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        WearText(
+                            text = headerMessage,
+                            style = WearMaterialTheme.typography.bodySmall
+                        )
+                        WearText(
+                            text = logText.take(600),
+                            style = WearMaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            ) {
+                item {
+                    WearButton(onClick = onCopy, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(R.string.smart_log_button_copy))
+                    }
+                }
+                item {
+                    WearFilledTonalButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(R.string.smart_log_button_close))
+                    }
+                }
+                item {
+                    WearButton(onClick = onOpenIssues, modifier = Modifier.fillMaxWidth()) {
+                        WearText(stringResource(R.string.smart_log_button_open_issues))
+                    }
+                }
+            }
+        }
+    } else if (isTv) {
+        moe.shizuku.manager.ui.compose.TvShizukuTheme {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { TvText(stringResource(R.string.smart_log_dialog_title)) },
+                text = {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        TvText(headerMessage)
+                        MonospaceLog(logText)
+                        TvButton(
+                            onClick = onOpenIssues,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            TvText(stringResource(R.string.smart_log_button_open_issues))
+                        }
+                    }
+                },
+                confirmButton = {
+                    TvButton(onClick = onCopy) {
+                        TvText(stringResource(R.string.smart_log_button_copy))
+                    }
+                },
+                dismissButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (snapshotCount > 0) {
+                            TvOutlinedButton(onClick = onClear) {
+                                TvText(stringResource(R.string.smart_log_button_clear))
+                            }
+                        }
+                        TvOutlinedButton(onClick = onDismiss) {
+                            TvText(stringResource(R.string.smart_log_button_close))
+                        }
+                    }
+                },
+                containerColor = TvMaterialTheme.colorScheme.surfaceVariant,
+                shape = TvMaterialTheme.shapes.extraLarge
+            )
+        }
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = {
+                Text(
+                    text = stringResource(R.string.smart_log_dialog_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = stringResource(
+                                    R.string.smart_log_window_header,
+                                    snapshotCount.coerceAtLeast(1)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 2.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+
+                            SelectionContainer {
+                                Text(
+                                    text = logText,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 120.dp, max = 240.dp)
+                                        .verticalScroll(logScrollState)
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(
+                            onClick = onCopy,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.ContentCopy,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.smart_log_button_copy),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.smart_log_button_close),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+
+                    if (snapshotCount > 0) {
+                        OutlinedButton(
+                            onClick = onClear,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.smart_log_button_clear))
+                        }
+                    }
+
+                    Button(
+                        onClick = onOpenIssues,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        ShizukuIcon(
+                            icon = R.drawable.ic_outline_open_in_new_24,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.smart_log_button_open_issues),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = null
         )
     }
 }

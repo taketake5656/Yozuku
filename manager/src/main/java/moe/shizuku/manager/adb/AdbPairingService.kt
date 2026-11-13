@@ -18,6 +18,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import moe.shizuku.manager.R
 import moe.shizuku.manager.ShizukuSettings
+import moe.shizuku.manager.utils.SmartLogManager
 import rikka.core.ktx.unsafeLazy
 
 @TargetApi(Build.VERSION_CODES.R)
@@ -36,12 +37,22 @@ class AdbPairingService : Service() {
         private const val startAction = "start"
         private const val stopAction = "stop"
         private const val replyAction = "reply"
+        private const val autoPairAction = "auto_pair"
         private const val remoteInputResultKey = "paring_code"
         private const val hostKey = "paring_host"
         private const val portKey = "paring_port"
 
         fun startIntent(context: Context): Intent {
             return Intent(context, AdbPairingService::class.java).setAction(startAction)
+        }
+
+        /** Pair with a code captured from the TV Settings dialog; port may be resolved via mDNS. */
+        fun autoPairIntent(context: Context, host: String, port: Int, code: String): Intent {
+            return Intent(context, AdbPairingService::class.java)
+                .setAction(autoPairAction)
+                .putExtra(hostKey, host)
+                .putExtra(portKey, port)
+                .putExtra(remoteInputResultKey, code)
         }
 
         private fun stopIntent(context: Context): Intent {
@@ -59,11 +70,19 @@ class AdbPairingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pairingInFlight = AtomicBoolean(false)
     private var adbMdns: AdbMdns? = null
+    private var pendingAutoCode: String? = null
 
     private val observer = Observer<Pair<String, Int>> { pair ->
         val (host, port) = pair
         Log.i(tag, "Pairing service host: $host, port: $port")
         if (port <= 0 || pairingInFlight.get()) return@Observer
+
+        val autoCode = pendingAutoCode
+        if (autoCode != null) {
+            pendingAutoCode = null
+            onInput(autoCode, host, port)
+            return@Observer
+        }
 
         val notification = createInputNotification(host, port)
         getSystemService(NotificationManager::class.java).notify(foregroundNotificationId, notification)
@@ -104,7 +123,23 @@ class AdbPairingService : Service() {
                     onStart()
                 }
             }
+            autoPairAction -> {
+                val code = intent.getStringExtra(remoteInputResultKey).orEmpty().trim()
+                val host = intent.getStringExtra(hostKey).orEmpty().ifBlank { "127.0.0.1" }
+                val port = intent.getIntExtra(portKey, -1)
+                if (code.isEmpty()) {
+                    onStart()
+                } else if (port in 1024..65535) {
+                    onInput(code, host, port)
+                } else {
+                    // Some TV shells show the code without the port; resolve it over mDNS.
+                    pendingAutoCode = code
+                    startSearch()
+                    searchingNotification
+                }
+            }
             stopAction -> {
+                pendingAutoCode = null
                 stopSearch()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -154,6 +189,7 @@ class AdbPairingService : Service() {
     }
 
     private fun onStart(): Notification {
+        pendingAutoCode = null
         getSystemService(NotificationManager::class.java).cancel(resultNotificationId)
         startSearch()
         return searchingNotification
@@ -171,7 +207,9 @@ class AdbPairingService : Service() {
                     AdbKey(PreferenceAdbKeyStore(ShizukuSettings.getPreferences()), "shizuku")
                 } catch (e: Throwable) {
                     e.printStackTrace()
-                    handleResult(false, AdbKeyException(e))
+                    val keyErr = AdbKeyException(e)
+                    SmartLogManager.recordPairingError("AdbPairingService.keyInit", host, port, keyErr)
+                    handleResult(false, keyErr)
                     return@launch
                 }
 
@@ -180,9 +218,19 @@ class AdbPairingService : Service() {
                         client.start()
                     }
                 }.onFailure {
+                    SmartLogManager.recordPairingError("AdbPairingService.exchange", host, port, it)
                     handleResult(false, it)
-                }.onSuccess {
-                    handleResult(it, null)
+                }.onSuccess { ok ->
+                    if (!ok) {
+                        SmartLogManager.recordPairingError(
+                            "AdbPairingService.handshake",
+                            host,
+                            port,
+                            null,
+                            "AdbPairingClient.start() returned false"
+                        )
+                    }
+                    handleResult(ok, null)
                 }
             } finally {
                 pairingInFlight.set(false)
