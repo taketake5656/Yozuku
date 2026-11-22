@@ -1,57 +1,33 @@
-# Android TV サポート
+# Android TV のアーキテクチャ
 
 **日本語** | [English](android-tv-support.en.md)
 
-このドキュメントでは、Yozuku で導入された Android TV への対応と UI の改良について説明します。
+`:manager` の Android TV 用 UI の技術的な仕様です。
 
-## 概要
+## UI の構成と端末の種類による切り替え
 
-Yozuku は Android TV 端末で本格的に使えるよう、大画面と離れた位置からの操作（10 フィート UI）に合わせた **Material 3 Expressive** コンポーネントによる専用 UI を備えています。
+`EnvironmentUtils.isTV(context)` によって、各 Activity は、スマートフォンのレイアウトを拡大するのではなく、`androidx.tv.material3`（`TvShizukuTheme`）で作った TV 専用のコンポーザブルに切り替わります。
 
-## TV 向け Material 3 Expressive UI
+| 画面 | スマートフォンの実装 | Android TV の実装 |
+| :--- | :--- | :--- |
+| ホーム画面 | `PhoneHomeScreen`（`HomeCards.kt`） | `TVHomeScreen`（`TVHomeScreen.kt`） |
+| 許可済みアプリ | `ApplicationManagementActivity` | `TvApplicationManagementScreen.kt` |
+| 設定 | `SettingsActivity`（カテゴリに分かれた画面） | `TvSettingsScreen.kt`（十字キーで操作する 2 ペインのレイアウト） |
+| 試験運用機能 | `LabFeaturesActivity` | `TvLabMenuScreen.kt` |
+| ADB のペア設定と起動 | `PairingGuideScreen`、`StarterActivity` | `TvAdbPairingTutorialScreen.kt`、`TvStarterScreen.kt` |
+| シェルの使い方 | `ShellGuideScreen.kt` | `TvShellTutorialScreen.kt` |
+| ADB モジュールとカタログ | `ModulesActivity`、`CatalogScreen` | 対象外（スマートフォンのみ） |
 
-Android TV のインターフェースは、スマートフォンの UI を拡大したものではありません。Jetpack Compose for TV を使ったネイティブな実装です:
-- **大画面向けレイアウト**: 16:9 のアスペクト比に最適化されています。
-- **読みやすいタイポグラフィ**: 離れた位置からでも読みやすいフォントとサイズを使用しています。
-- **TV 専用コンポーネント**: TV に最適化されたボタン、カード、ナビゲーション面など、`androidx.tv.material3` のコンポーネントを使用しています。
+## テーマと操作
 
-## Monet（ダイナミックカラー）への対応
+| 機能 | 仕様 |
+| :--- | :--- |
+| **ダイナミックカラー（Monet）** | Android 12 以降（API 31 以降）で `dynamicDarkColorScheme` / `dynamicLightColorScheme` を使います。設定で切り替えられます |
+| **黒のナイトテーマ** | OLED や暗い部屋での視聴向けに、背景のサーフェスを真っ黒（`#000000`）にします |
+| **十字キーでの操作** | `TvSurface` のコントロール間で明示的にフォーカスを移動し、コンテナの強調表示と、標準の「戻る」キーの動作に対応します |
+| **ダイアログ** | `TvMaterialTheme` のテーマを適用した中央寄せの `AlertDialog`。内容は十字キーでスクロールできます |
 
-Android 12（SDK 31）以降の端末では、Yozuku は **Monet（ダイナミックカラー）** に対応しています:
-- UI はユーザーの壁紙やシステムテーマから自動的に色を取得します。
-- これにより、Android TV のシステム UI や他の最新の TV アプリと見た目の一貫性が保たれます。
-- ダイナミックカラーは設定メニューで切り替えられます。
+## パッケージ ID と確認
 
-## ブラックナイトテーマ
-
-Yozuku には、OLED や高コントラストでの視聴に最適化した専用の**ブラックナイトテーマ**があります:
-- 真っ黒（`#000000`）な背景を使用します。
-- 暗い環境での目の疲れを軽減します。
-- さまざまな種類の TV パネルで、読みやすさのためにコントラストを高めます。
-
-## フォーカス管理と D-pad 操作
-
-UI はリモコンでの操作を前提に設計されています:
-- **予測しやすいフォーカス**: D-pad で要素間を論理的な順序でフォーカス移動できます。
-- **わかりやすいフォーカス表示**: フォーカス中の項目には、はっきりした高コントラストの枠と拡大アニメーションが表示されます。
-- **決定操作**: 操作できる要素はすべて、D-pad の「決定」または「OK」ボタンに対応しています。
-- **戻るボタン**: リモコンの戻るボタンで、標準的な戻る操作ができます。
-
-## TV に最適化したダイアログ
-
-**設定**と**モジュール**のダイアログは TV 向けに作り直されています:
-- **中央配置**: 見やすいよう、ダイアログは画面の中央に表示されます。
-- **フォーカスの固定**: ダイアログを閉じるまで、フォーカスはダイアログ内に留まります。
-- **スクロール可能な内容**: 長いモジュールの説明やログも、D-pad で簡単にスクロールできます。
-- **確認操作**: 「確認」と「キャンセル」のボタンが、区別しやすいフォーカス表示で配置されています。
-
-## パッケージ ID
-
-すべての TV 機能は Yozuku のパッケージ ID に従います:
-- パッケージ名: `kerneldroid.nightzuku`
-- 共有ユーザー ID: `kerneldroid.nightzuku.uid`（該当する場合）
-
-## 動作確認
-
-TV 向け UI は次の環境で確認済みです:
-- Android TV 16 エミュレーター*
+- パッケージ ID: `kerneldroid.nightzuku`
+- エミュレーターでの確認: Android TV 16（`screenshots/tv/`）

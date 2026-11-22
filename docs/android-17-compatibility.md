@@ -1,16 +1,19 @@
-# Android 15 以降の非公開 API の変更と Android17Compat レイヤー
+# Android 15 以降の非公開 API の変更、ワイヤレス ADB の制限、Android17Compat レイヤー
 
 **日本語** | [English](android-17-compatibility.en.md)
 
-このドキュメントでは、プラットフォームの非公開のパッケージ API と権限 API で実際に何が変わったか、それをどう確かめたか、そして `Android17Compat` がそれにどう対処しているかを記録します。以下のシグネチャはすべて、記憶ではなくプラットフォームから読み取ったものです。
+このドキュメントでは、プラットフォームの非公開のパッケージ API、権限 API、デバッグの API で実際に何が変わったか、それをどう確かめたか、そして `Android17Compat` と起動時の自動起動のしくみがそれにどう対処しているかを記録します。以下のシグネチャとアノテーションはすべて、記憶ではなくプラットフォームから読み取ったものです。
 
 ## 確認の方法
 
 - コンパイル済みの Android 17 フレームワーク `org.robolectric:android-all:17-robolectric-15733970`。AOSP からビルドされたもので、SDK の公開 `android.jar` には含まれない非公開の `android.permission.IPermissionManager$Stub` と `android.content.pm.IPackageManager$Stub` が入っています。この 2 つのインターフェースに `javap` を使うと、正確なディスクリプタが得られます。
-- `platform/frameworks/base` の `android15-release`、`android16-release`、`android17-release` ブランチにある AIDL のソース。
+- 逆コンパイルした Android 17 Canary の `/system/framework/framework.jar`（`ZP11.261016.008`、SDK 37.2、extension 24）の `android.provider.Settings`、`android.Manifest`、`android.debug.*`。
+- `platform/frameworks/base` の `android15-release`、`android16-release`、`android17-release` ブランチにある AIDL とフレームワークのソース。
 - `dev.rikka.hidden:compat:4.4.0` 本体。このヘルパーライブラリがどのシグネチャに対してコンパイルされたかを確認するためです。
 
 ## 変わったこと
+
+### 非公開のパッケージ API と権限 API
 
 `IPermissionManager`（15、16、17 で共通）:
 
@@ -59,6 +62,32 @@ API <= 32  ApplicationInfo getApplicationInfo(String, int, int)
 
 この変更は Android 17 に限ったものではありません。`android15-release` の時点で、すでに 4 引数の権限メソッドのシグネチャになっています。また、上のフラグの幅の違いは 15、16、17 のどのリリースでもなく、API 33 で生じたものです。
 
+## Android 17（API 37）でのワイヤレス ADB と起動時の自動起動の変更
+
+Android 17 には、root を使わないワイヤレス ADB での起動に直接影響する、プラットフォームの変更が 3 つあります。
+
+1. **書き込みの制限（`MANAGE_DEBUGGING`）:**
+   `SettingsProvider` は、`adb_enabled`、`adb_wifi_enabled`、`adb_allowed_connection_time` の書き込みに `android.permission.MANAGE_DEBUGGING`（`signature|privileged`。`pm grant` では付与できない）を求めます。Yozuku のサーバーが動いていない再起動の後は、`WRITE_SECURE_SETTINGS` を持っているだけでは足りなくなりました。
+2. **読み取りの値の伏せ（`@Readable(redactedValue = "0")`）:**
+   `framework.jar`（`ZP11.261016.008`、`android/provider/Settings.java` の 4497〜4501 行）では、`Settings.Global.ADB_ENABLED` と `Settings.Global.ADB_WIFI_ENABLED` の両方に `@Readable(redactedValue = "0")` が付いています。サードパーティのアプリには、ワイヤレスデバッグが有効でも常に `0` が見えます。そのため、起動時の開始を `AdbSettings.isWirelessAdbEnabled()` で判断すると、`adbd` がすでに待ち受けていても中止してしまいます。
+3. **ローカルネットワークの実行時の権限（`ACCESS_LOCAL_NETWORK`）:**
+   API 37 をターゲットにするアプリは、`NsdManager` による mDNS の検出と、LAN 内の TCP 接続に、実行時の権限 `android.permission.ACCESS_LOCAL_NETWORK` が必要です。ないと、検出が `EPERM` で失敗します（[Android Local Network Permission](https://developer.android.com/privacy-and-security/local-network-permission)）。
+
+### Android 11〜17 以降での、Yozuku の起動時の自動起動
+
+- **`BootCompleteReceiver` と `AdbBootStartScheduler`（`JobScheduler`）:**
+  `LaunchMethod.ADB` のとき、`BootCompleteReceiver` は `LOCKED_BOOT_COMPLETED` を無視し、`NetworkCapabilities.TRANSPORT_WIFI` を条件とし、指数関数的に間隔を延ばして再試行する、永続化した `JobInfo`（`JOB_ID_ADB_BOOT_START = 4210`）をすぐに予約します。これにより、Wi-Fi の接続を待つ競合と、`goAsync()` の 10 秒の ANR の上限の、どちらも避けられます。
+- **強化した `AdbMdns`:**
+  API 34 以降では `NsdManager.registerServiceInfoCallback()` を使い（非推奨の `resolveService()` を避ける）、API 30〜33 では従来の `resolveService()` の呼び出しを 1 つずつ行って `FAILURE_ALREADY_ACTIVE` を防ぎます。検出の間は `WifiManager.MulticastLock` を取得し、API 37 以降では `ACCESS_LOCAL_NETWORK` を確認します。
+- **Android 17 以降の ADB Wi-Fi 2.0 による操作なしの再接続:**
+  Android 17 の ADB Wi-Fi 2.0 は、信頼済みの Wi-Fi ネットワークに接続すると、ワイヤレスデバッグを自動で有効にし直します（[Android Developers Blog](https://android-developers.googleblog.com/2026/09/wireless-debugging-adb-wifi-2.html)）。`AdbSettings.prepareWirelessAdbForBoot()` は API 37 以降では `REDACTION_DEFER_TO_MDNS` を返すので、`AdbBootStartJobService` は `Settings.Global` を読み書きせずに、そのまま mDNS の検出に進みます。サーバーが動いている間（`UID 2000`）は、`NightDogClient` が `AdbSettings.preProvisionForAutostart()` を呼び、`adb_allowed_connection_time = 0` を保存して、ペア設定した鍵が 7 日で期限切れにならないようにします。
+- **ループバックを使わない構成と、オフラインでも動く補助の構成:**
+  - **LAN 上の外部の機器 / OpenWrt / PC の mDNS によるスターター**（`tools/nightzuku-lan-starter`）: スマートフォンが家の Wi-Fi に接続すると、`wlan0` 経由で接続します。Android の Doze、`ACCESS_LOCAL_NETWORK`、将来のループバックの制限の影響を受けません。
+  - **Device Owner との組み合わせ**（`DeviceOwnerBridge` と `NightzukuDeviceAdminReceiver`）: 自分で有効にする任意のオフラインの層です。電源を入れ直しても、Wi-Fi や ADB なしで、パッケージの管理、実行時の権限、`Settings.Global.ADB_ENABLED` の維持を行えます。
+  - 将来の QPR で `adbd` への localhost（`127.0.0.1`）接続が制限される可能性については、[`docs/adb-loopback-restriction-memo.md`](adb-loopback-restriction-memo.md) で追っています。
+
+> 注: 設定画面の「起動時の開始方法」で「ワイヤレス ADB」を選ぶか、root が使えないデバイスでは、ワイヤレス ADB での起動になります（`ShizukuSettings.resolveBootLaunchMethod`）。mDNS の検出のタイムアウト（既定 25 秒、10〜120 秒）、再試行の最大回数（既定 4 回、1〜10 回）、失敗時の通知は、設定の「ワイヤレスでの自動起動のオプション」で変えられます。
+
 ## Android17Compat がしていること
 
 - 非公開のインターフェースを `ServiceManager` と `Class.forName` で解決し、プラットフォームが実際に公開しているメソッドに対して、引数の形の候補を順に試します。
@@ -70,4 +99,4 @@ API <= 32  ApplicationInfo getApplicationInfo(String, int, int)
 ## 既知の制限
 
 - 対応しているのは 15、16、17 の形です。15 より前の形も、引数の数で区別できる場合は古い候補として残していますが、対象ではありません。
-- このレイヤーは Android 17 の SDK でコンパイルできることを確認し、プラットフォームのソースと照らし合わせてレビューしています。実機での動作はまだ確認していません。
+- このレイヤーは Android 17 の SDK でコンパイルできることを確認し、プラットフォームのソースと照らし合わせてレビューしています。

@@ -1,86 +1,53 @@
-# GitHub カタログ
+# GitHub モジュールカタログ
 
 **日本語** | [English](github-catalog.en.md)
 
-Yozuku の ADB モジュールをオンラインで探すための仕組みです。
+GitHub Topics（`topic:adb-modules`）を使って、Yozuku の ADB モジュールをオンラインで探してインストールする、分散型のしくみです。
 
-## 仕組み
+## 検索とインストールの流れ
 
-モジュールは GitHub Topics の検索（`topic:adb-modules`）で見つけます。モジュールの作者は、自分のリポジトリにこのトピックを付けます。中央の登録所は必要ありません。
+1. `GET /search/repositories?q=topic:adb-modules` で検索します（ユーザーのトークン（PAT）で認証することもできます）。
+2. `ModuleValidator` が、リポジトリのルートとサブフォルダに正しい `module.prop` があるかを調べます。
+3. 検索の結果は、ローカルの `DiscoveryCache` に `6 時間` 保存します。
+4. `ModuleInstaller` が、選んだモジュールを `AdbModuleManager.install()` でインストールします。
 
-**流れ:**
-1. 初回起動時に、ユーザーが GitHub の PAT（パーソナルアクセストークン）を入力します
-2. アプリが GitHub を検索します: `GET /search/repositories?q=topic:adb-modules`
-3. 各リポジトリを検証します（ルートまたはサブディレクトリに `module.prop` があるかを確認）
-4. モジュールをローカルにキャッシュします（有効期間 6 時間）
-5. ユーザーがカタログを閲覧し、インストール方法（ソースまたはリリース ZIP）を選択します
+## 利用の上限
 
-## モジュール数の制限
-
-- 1 ユーザーあたり最大 4 モジュール（そのユーザーの全リポジトリの合計）
-- 公式のオーナー（`kerneldroid`）は制限の対象外です
-- 制限を超えたユーザーのリポジトリは、検索時にスキップされます
+| 制限 | 値 |
+| :--- | :--- |
+| GitHub のアカウントあたりのモジュールの最大数 | すべてのリポジトリの合計で `4`（公式のオーナー `kerneldroid` は対象外） |
+| 認証なしの GitHub API の上限 | `1 時間あたり 60 回` |
+| 認証あり（PAT）の GitHub API の上限 | `1 時間あたり 5,000 回` |
+| 条件付きのリクエスト | 使える場合は ETag / `304 Not Modified` を使います（`RateLimitTracker`） |
+| ローカルのキャッシュの有効期間 | `6 時間` |
 
 ## インストール方法
 
-**ソースから:**
-- GitHub Contents API からファイルを取得します
-- 既定のブランチを動的に判定します（ハードコードしません）
-- 必要なファイルだけで ZIP を作成します: module.prop、*.sh、banner.*、webui/**（全ファイル）
-- 既存の `AdbModuleManager.install()` でインストールします
+| 方法 | しくみ |
+| :--- | :--- |
+| **ソースから** | 判定した既定のブランチについて GitHub Contents API に問い合わせ、`SourceZipBuilder` が `module.prop`、`*.sh`、`banner.*`、`webui/**` だけを含む ZIP を作ります |
+| **リリース ZIP から** | GitHub Releases API に問い合わせ、モジュール ID のパターンでアセットを選び、そのままインストールします |
 
-**リリース ZIP から:**
-- GitHub Releases からアセットをダウンロードします
-- モジュール ID のパターンでアセットを照合します
-- そのままインストールします
+## トークンの安全性
 
-## セキュリティ
+- `TokenStore` で、AndroidKeyStore（`AES/GCM/NoPadding`）により暗号化して保存します。以前の暗号化されていないトークンは、起動時に移行します。
+- `ghp_` / `github_pat_` で始まり、`30` 文字以上であるかを検証します。
+- logcat には書き出しません。
+- `api.github.com` と `github.com` にだけ送ります（サードパーティの `updateJson` の URL には送りません）。
 
-- トークンは AndroidKeyStore（`AES/GCM/NoPadding`）で暗号化して保存されます。以前の暗号化されていないトークンは、起動時に移行されます
-- トークンは `ghp_`／`github_pat_` で始まり 30 文字以上かを検証します
-- トークンは logcat に記録されません
-- トークンは `api.github.com`／`github.com` のドメインにのみ送信されます（updateJson の URL には漏れません）
+## プラットフォームごとの対応
 
-## 対応プラットフォーム
+| プラットフォーム | カタログの画面 | アップデートとトークンの設定 | 試験運用機能 |
+| :--- | :--- | :--- | :--- |
+| スマートフォン / タブレット | `CatalogScreen.kt` | `UpdateSettingsScreen.kt` | `LabFeaturesActivity.kt` |
+| Android TV | 対象外 | 対象外 | `TvLabMenuScreen.kt` |
+| Wear OS | 対象外 | 対象外 | `LabFeaturesActivity.kt`（Wear 用のレイアウト） |
 
-| プラットフォーム | カタログ UI | トークン設定 | 試験運用機能メニュー |
-|----------|-----------|----------------|----------|
-| スマートフォン | CatalogScreen.kt | UpdateSettingsScreen.kt | SettingsActivity から |
-| Android TV | なし（モジュールの画面は削除） | なし | TvLabMenuScreen.kt |
-| WearOS | なし（モジュールの画面は削除） | なし | WearSettingsScreen から |
+## ソースの構成
 
-## API の利用
-
-- 認証なし: 60 リクエスト／時（制限あり）
-- PAT あり: 5,000 リクエスト／時
-- すべての API 呼び出しでレート制限を追跡します
-- 可能な場合は ETag による条件付きリクエストを使用します（304 はカウントされません）
-
-## ファイル構成
-
-```
-module/discovery/
-├── ModuleDiscoveryManager.kt   # 全体の制御: 検索 → 検証 → キャッシュ
-├── ModuleValidator.kt          # module.prop の検証とサブディレクトリの走査
-├── DiscoveredModule.kt         # 見つかったモジュールのデータクラス
-├── GitHubModels.kt             # GitHub API のレスポンスモデル
-├── DiscoveryCache.kt           # SharedPreferences のキャッシュ（有効期間 6 時間）
-└── RateLimitTracker.kt         # GitHub のレート制限の追跡
-
-module/update/
-├── ModuleInstaller.kt          # インストール処理（ソース／リリース）
-├── SourceZipBuilder.kt         # ソースファイルから ZIP を作成
-├── UpdateChecker.kt            # モジュールのアップデート確認
-├── UpdateResult.kt             # アップデート確認結果のモデル
-├── UpdateSettingsScreen.kt     # スマートフォン向けのアップデート設定
-└── GitHubReleaseModels.kt      # GitHub Release API のモデル
-
-module/catalog/
-├── CatalogScreen.kt            # スマートフォン向けカタログ UI
-└── TokenStore.kt               # トークンの保存
-
-settings/
-└── TvLabMenuScreen.kt          # TV 向け試験運用機能メニュー
-```
-
-> 上流の英語の文書（r62）の一覧には `TvCatalogScreen.kt` が残っていますが、このファイルはコードから削除されているため、このページでは外しています。
+| フォルダ | 主なファイル |
+| :--- | :--- |
+| `manager/.../module/discovery/` | `ModuleDiscoveryManager.kt`、`ModuleValidator.kt`、`DiscoveredModule.kt`、`GitHubModels.kt`、`DiscoveryCache.kt`、`RateLimitTracker.kt` |
+| `manager/.../module/update/` | `ModuleInstaller.kt`、`ModuleUpdateScheduler.kt`、`SourceZipBuilder.kt`、`UpdateChecker.kt`、`UpdateResult.kt`、`UpdateSettingsScreen.kt`、`GitHubReleaseModels.kt` |
+| `manager/.../module/catalog/` | `CatalogScreen.kt`、`TokenStore.kt` |
+| `manager/.../settings/` | `LabFeaturesActivity.kt`、`TvLabMenuScreen.kt` |

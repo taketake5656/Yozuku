@@ -6,18 +6,16 @@ import android.os.IBinder
 import android.os.Parcel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.shizuku.manager.ShizukuSettings
+import moe.shizuku.manager.adb.AdbSettings
 import moe.shizuku.manager.application
 import moe.shizuku.manager.module.AdbModule
 import moe.shizuku.manager.module.AdbModuleManager
@@ -43,15 +41,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 4. Applies pending module updates and restarts privileged `service.sh` hooks when requested by
  *    [ModuleUpdateScheduler] or manual user triggers.
  *
- * Note: Unprivileged periodic GitHub update polling is handled separately by [ModuleUpdateScheduler]
- * via Android's `JobScheduler` so network checks respect OS standby/unmetered constraints without
- * bloating the privileged watchdog loop.
+ * Note: Periodic background execution is handled by [ModuleUpdateScheduler] via Android's
+ * `JobScheduler` so checks respect Doze and OS network constraints rather than running an
+ * in-process `delay()` loop.
  */
 object NightDogClient {
 
     private const val KEY_NIGHTDOG_ENABLED = "nightdog_enabled"
     private const val KEY_NIGHTDOG_PENDING_SYNC = "nightdog_pending_sync"
-    private const val PERIODIC_CHECK_INTERVAL_MS = 15L * 60L * 1000L
 
     data class ServerWatchdogStatus(
         val enabled: Boolean,
@@ -93,8 +90,6 @@ object NightDogClient {
 
     @Volatile
     private var appContext: Context? = null
-    @Volatile
-    private var periodicJob: Job? = null
 
     private val _isCheckingModules = MutableStateFlow(false)
     val isCheckingModules: StateFlow<Boolean> = _isCheckingModules.asStateFlow()
@@ -109,7 +104,9 @@ object NightDogClient {
         syncWithServer()
         refreshWatchdogStatus()
         val ctx = resolveContext() ?: return@OnBinderReceivedListener
+        ModuleUpdateScheduler.syncSchedule(ctx)
         scope.launch {
+            runCatching { AdbSettings.preProvisionForAutostart(ctx) }
             flushPendingPrivilegeUpdates(ctx)
             if (ModuleSettings.isBackgroundCheckEnabled() || isEnabled()) {
                 runBackgroundCheck(
@@ -128,7 +125,6 @@ object NightDogClient {
                 )
             }
         }
-        ensurePeriodicLoop()
     }
 
     private val binderDeadListener = Shizuku.OnBinderDeadListener {
@@ -145,31 +141,18 @@ object NightDogClient {
         if (!initialized.compareAndSet(false, true)) return
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
         Shizuku.addBinderDeadListener(binderDeadListener)
-        ensurePeriodicLoop()
     }
 
     private fun resolveContext(): Context? {
         return appContext ?: runCatching { application.applicationContext }.getOrNull()
     }
 
+    /**
+     * Synchronizes periodic background checks with Android's `JobScheduler` via
+     * [ModuleUpdateScheduler]. Kept for API compatibility; no in-process polling loop is started.
+     */
     fun ensurePeriodicLoop() {
-        val current = periodicJob
-        if (current != null && current.isActive) return
-        periodicJob = scope.launch {
-            while (isActive) {
-                delay(PERIODIC_CHECK_INTERVAL_MS)
-                val ctx = resolveContext() ?: continue
-                if (ModuleSettings.isBackgroundCheckEnabled() || isEnabled()) {
-                    runBackgroundCheck(
-                        context = ctx,
-                        forceUpdateCheck = false,
-                        runServices = true,
-                        forceRunServices = false,
-                        onServerStart = false
-                    )
-                }
-            }
-        }
+        resolveContext()?.let { ModuleUpdateScheduler.syncSchedule(it) }
     }
 
     fun isServerAvailable(): Boolean {
@@ -228,9 +211,9 @@ object NightDogClient {
             ?.apply()
 
         refreshWatchdogStatus()
-        if (enabled) {
-            ensurePeriodicLoop()
-            resolveContext()?.let { ctx ->
+        resolveContext()?.let { ctx ->
+            ModuleUpdateScheduler.syncSchedule(ctx)
+            if (enabled) {
                 scope.launch {
                     runBackgroundCheck(
                         context = ctx,

@@ -1,10 +1,11 @@
-# Android 15+ Hidden API Changes and the Android17Compat Layer
+# Android 15+ Hidden API Changes, Wireless ADB Restrictions, and the Android17Compat Layer
 
 [日本語](android-17-compatibility.md) | **English**
 
-This document records what actually changed in the platform's hidden package and
-permission APIs, how that was established, and what `Android17Compat` does about
-it. Every signature below was read out of the platform, not recalled.
+This document records what actually changed in the platform's hidden package,
+permission, and debugging APIs, how that was established, and what
+`Android17Compat` and the boot auto-start pipeline do about it. Every signature
+and annotation below was read out of the platform, not recalled.
 
 ## How this was established
 
@@ -13,12 +14,17 @@ it. Every signature below was read out of the platform, not recalled.
   and contains the hidden `android.permission.IPermissionManager$Stub` and
   `android.content.pm.IPackageManager$Stub` that the SDK's public `android.jar`
   does not ship. `javap` on those two interfaces gives the exact descriptors.
-- The AIDL sources on the `android15-release`, `android16-release` and
-  `android17-release` branches of `platform/frameworks/base`.
+- Decompiled Android 17 Canary `/system/framework/framework.jar`
+  (`ZP11.261016.008`, SDK 37.2, extension 24) for `android.provider.Settings`,
+  `android.Manifest`, and `android.debug.*`.
+- The AIDL and framework sources on the `android15-release`, `android16-release`
+  and `android17-release` branches of `platform/frameworks/base`.
 - `dev.rikka.hidden:compat:4.4.0` itself, to see which signatures the helper
   library was compiled against.
 
 ## What changed
+
+### Hidden Package and Permission APIs
 
 `IPermissionManager`, identically on 15, 16 and 17:
 
@@ -94,6 +100,65 @@ The change is not specific to Android 17: `android15-release` already carries th
 four-argument permission signatures, and the flag-width split above is tied to
 API 33 rather than to any 15/16/17 release.
 
+## Wireless ADB & Boot Auto-Start Changes on Android 17 (API 37)
+
+Three platform changes in Android 17 directly affect rootless wireless ADB
+startup:
+
+1. **Write restriction (`MANAGE_DEBUGGING`):**
+   `SettingsProvider` requires `android.permission.MANAGE_DEBUGGING`
+   (`signature|privileged`, not grantable via `pm grant`) to write `adb_enabled`,
+   `adb_wifi_enabled`, and `adb_allowed_connection_time`. Holding
+   `WRITE_SECURE_SETTINGS` alone is no longer sufficient after a reboot when the
+   Yozuku server is not running.
+2. **Read redaction (`@Readable(redactedValue = "0")`):**
+   In `framework.jar` (`ZP11.261016.008`, `android/provider/Settings.java`,
+   lines 4497–4501), both `Settings.Global.ADB_ENABLED` and
+   `Settings.Global.ADB_WIFI_ENABLED` are annotated with
+   `@Readable(redactedValue = "0")`. Third-party apps always read `0` even when
+   wireless debugging is active. Gating boot startup on
+   `AdbSettings.isWirelessAdbEnabled()` therefore aborts even when `adbd` is
+   already listening.
+3. **Local network runtime permission (`ACCESS_LOCAL_NETWORK`):**
+   Apps targeting API 37 must hold the runtime permission
+   `android.permission.ACCESS_LOCAL_NETWORK` for `NsdManager` mDNS discovery and
+   local LAN TCP connections; otherwise discovery fails with `EPERM`
+   ([Android Local Network Permission](https://developer.android.com/privacy-and-security/local-network-permission)).
+
+### How Yozuku handles boot auto-start across Android 11–17+
+
+- **`BootCompleteReceiver` + `AdbBootStartScheduler` (`JobScheduler`):**
+  For `LaunchMethod.ADB`, `BootCompleteReceiver` ignores `LOCKED_BOOT_COMPLETED`
+  and immediately schedules a persisted `JobInfo` (`JOB_ID_ADB_BOOT_START = 4210`)
+  requiring `NetworkCapabilities.TRANSPORT_WIFI` with exponential backoff,
+  eliminating both the Wi-Fi association race and the 10-second `goAsync()` ANR
+  ceiling.
+- **Hardened `AdbMdns`:**
+  Uses `NsdManager.registerServiceInfoCallback()` on API 34+ (avoiding deprecated
+  `resolveService()`), serializes legacy `resolveService()` calls on API 30–33 to
+  prevent `FAILURE_ALREADY_ACTIVE`, acquires `WifiManager.MulticastLock` during
+  discovery, and checks `ACCESS_LOCAL_NETWORK` on API 37+.
+- **Native ADB Wi-Fi 2.0 Zero-Touch (Android 17+):**
+  Android 17 ADB Wi-Fi 2.0 automatically re-enables wireless debugging when the
+  device connects to a trusted Wi-Fi network
+  ([Android Developers Blog](https://android-developers.googleblog.com/2026/09/wireless-debugging-adb-wifi-2.html)).
+  `AdbSettings.prepareWirelessAdbForBoot()` returns `REDACTION_DEFER_TO_MDNS` on
+  API 37+ so `AdbBootStartJobService` proceeds directly to mDNS discovery without
+  reading or writing `Settings.Global`. While the server is active (`UID 2000`),
+  `NightDogClient` calls `AdbSettings.preProvisionForAutostart()` to persist
+  `adb_allowed_connection_time = 0` so paired keys do not expire after 7 days.
+- **Non-loopback & offline companion architectures:**
+  - **External LAN / OpenWrt / PC mDNS starter** (`tools/nightzuku-lan-starter`):
+    connects over `wlan0` when the phone joins home Wi-Fi; unaffected by Android
+    Doze, `ACCESS_LOCAL_NETWORK`, or a future loopback restriction.
+  - **Hybrid Device Owner bridge** (`DeviceOwnerBridge` +
+    `NightzukuDeviceAdminReceiver`): optional opt-in offline layer surviving cold
+    reboots without Wi-Fi or ADB for package management, runtime permissions, and
+    `Settings.Global.ADB_ENABLED` persistence.
+  - See [`docs/adb-loopback-restriction-memo.md`](adb-loopback-restriction-memo.en.md)
+    for forward-looking tracking of the potential `adbd` localhost (`127.0.0.1`)
+    restriction in future QPR releases.
+
 ## What Android17Compat does
 
 - Resolves the hidden interfaces through `ServiceManager` and `Class.forName`, and
@@ -118,4 +183,4 @@ API 33 rather than to any 15/16/17 release.
 - The 15/16/17 shapes are covered. Pre-15 shapes are kept as legacy candidates
   where they are distinguishable by arity, but they are not the target.
 - This layer is compile-verified against the Android 17 SDK and reviewed against
-  the platform sources. It has not been exercised on a device.
+  the platform sources.

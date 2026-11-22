@@ -55,7 +55,8 @@ object SmartLogManager {
     private const val PREF_UNCLEAN_EXIT_COUNT = "smart_log_unclean_exit_count"
     private const val LOCAL_STORE_REL_PATH = "smart_logs/manager_snapshots.log"
     private const val MAX_PUSH_PAYLOAD_CHARS = 128 * 1024
-    private const val MAX_LOGCAT_LINES = 240
+    private const val RAW_LOGCAT_FETCH_LINES = 400
+    private const val MAX_LOGCAT_LINES = SmartLogEngine.DEFAULT_FILTERED_LOGCAT_LINES
     private const val MAX_TRACE_LINES = 200
 
     data class SmartLogUiState(
@@ -92,6 +93,7 @@ object SmartLogManager {
     fun init(context: Context) {
         val ctx = context.applicationContext ?: context
         appContext = ctx
+        SmartLogEngine.setManagerPackage(ctx.packageName)
         HiddenApiIntrospector.exemptHiddenApis()
         if (!initialized.compareAndSet(false, true)) {
             scope.launch { syncWithServerAndDisk() }
@@ -156,9 +158,10 @@ object SmartLogManager {
                 }
             }
         }
-        files.add(File(SmartLogEngine.SPOOL_APP_DE_CACHE_PATH))
-        files.add(File(SmartLogEngine.SPOOL_APP_CE_CACHE_PATH))
-        files.add(File(SmartLogEngine.SPOOL_EXT_EMULATED_PATH))
+        val managerPackage = context?.packageName ?: SmartLogEngine.getManagerPackage()
+        files.add(File(SmartLogEngine.spoolAppDeCachePath(managerPackage)))
+        files.add(File(SmartLogEngine.spoolAppCeCachePath(managerPackage)))
+        files.add(File(SmartLogEngine.spoolExtEmulatedPath(managerPackage)))
         // /data/local/tmp and the shell DE dir are deliberately absent: SELinux denies them to
         // untrusted_app. The server reads those and delivers them over Binder or pushSmartLog.
         return files.toList()
@@ -176,6 +179,7 @@ object SmartLogManager {
         }
         val ctx = context.applicationContext ?: context
         appContext = ctx
+        SmartLogEngine.setManagerPackage(ctx.packageName)
         val parsed = SmartLogEngine.parseSnapshots(rawPayload)
         if (parsed.isEmpty()) {
             return false
@@ -745,14 +749,14 @@ object SmartLogManager {
     private fun captureProcessLogcatTail(): String {
         return try {
             val pid = android.os.Process.myPid()
-            val proc = ProcessBuilder("logcat", "-d", "-v", "time", "--pid=$pid", "-t", MAX_LOGCAT_LINES.toString())
+            val proc = ProcessBuilder("logcat", "-d", "-v", "time", "--pid=$pid", "-t", RAW_LOGCAT_FETCH_LINES.toString())
                 .redirectErrorStream(true)
                 .start()
             val lines = BufferedReader(InputStreamReader(proc.inputStream, Charsets.UTF_8)).use { reader ->
                 reader.readLines()
             }
             runCatching { proc.destroy() }
-            lines.takeLast(MAX_LOGCAT_LINES).joinToString("\n")
+            SmartLogEngine.filterProcessLogcat(lines, MAX_LOGCAT_LINES)
         } catch (_: Throwable) {
             ""
         }

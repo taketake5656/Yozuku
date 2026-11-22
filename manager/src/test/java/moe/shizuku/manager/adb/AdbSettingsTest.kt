@@ -38,8 +38,16 @@ class AdbSettingsTest {
     }
 
     @Test
-    fun `reports disabled when the connection timer is still set`() {
+    fun `detects enabled wireless adb even when connection timer is still set`() {
         Settings.Global.putInt(resolver, "adb_wifi_enabled", 1)
+        Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 1)
+
+        assertTrue(AdbSettings.isWirelessAdbEnabled(resolver))
+    }
+
+    @Test
+    fun `reports disabled when adb_wifi_enabled is off`() {
+        Settings.Global.putInt(resolver, "adb_wifi_enabled", 0)
         Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 1)
 
         assertFalse(AdbSettings.isWirelessAdbEnabled(resolver))
@@ -56,11 +64,43 @@ class AdbSettingsTest {
     }
 
     @Test
-    fun `already enabled state needs no permission`() {
+    fun `already enabled state succeeds without permission even when connection timer is non-zero`() {
         Settings.Global.putInt(resolver, "adb_wifi_enabled", 1)
         Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 1)
-        Settings.Global.putLong(resolver, "adb_allowed_connection_time", 0L)
 
         assertTrue(AdbSettings.enableWirelessAdb(context))
+        assertEquals(
+            AdbSettings.BootPrepareResult.ENABLED,
+            AdbSettings.prepareWirelessAdbForBoot(context, sdkInt = 34)
+        )
+    }
+
+    @Test
+    fun `already enabled state best-effort clears connection timer when permission is granted`() {
+        shadowOf(context).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
+        Settings.Global.putInt(resolver, "adb_wifi_enabled", 1)
+        Settings.Global.putInt(resolver, Settings.Global.ADB_ENABLED, 1)
+
+        assertTrue(AdbSettings.enableWirelessAdb(context))
+        assertEquals(0L, Settings.Global.getLong(resolver, "adb_allowed_connection_time", -1L))
+    }
+
+    @Test
+    fun `android 17 boot preparation defers to mDNS despite redacted zero settings`() {
+        assertTrue(AdbSettings.isReadRedactedPlatform(37))
+        assertFalse(AdbSettings.isReadRedactedPlatform(36))
+        assertEquals(
+            AdbSettings.BootPrepareResult.REDACTION_DEFER_TO_MDNS,
+            AdbSettings.prepareWirelessAdbForBoot(context, sdkInt = 37)
+        )
+    }
+
+    @Test
+    fun `android 14 boot preparation enables keys when WRITE_SECURE_SETTINGS is held`() {
+        shadowOf(context).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
+        assertEquals(
+            AdbSettings.BootPrepareResult.ENABLED,
+            AdbSettings.prepareWirelessAdbForBoot(context, sdkInt = 34)
+        )
     }
 }

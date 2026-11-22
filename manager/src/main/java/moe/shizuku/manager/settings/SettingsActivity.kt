@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,7 +51,10 @@ import moe.shizuku.manager.ktx.setComponentEnabled
 import moe.shizuku.manager.module.ModuleSettings
 import moe.shizuku.manager.module.update.ModuleUpdateScheduler
 import moe.shizuku.manager.module.update.UpdateSettingsScreen
+import moe.shizuku.manager.ShizukuSettings.LaunchMethod
+import moe.shizuku.manager.receiver.AdbBootStartScheduler
 import moe.shizuku.manager.receiver.BootCompleteReceiver
+import moe.shizuku.manager.utils.EnvironmentUtils
 import moe.shizuku.manager.ui.compose.SettingsItem
 import moe.shizuku.manager.ui.compose.SettingsSection
 import moe.shizuku.manager.ui.compose.SettingsSwitchItem
@@ -62,6 +66,7 @@ import moe.shizuku.manager.ui.compose.htmlToPlainText
 import moe.shizuku.manager.utils.CustomTabsHelper
 import rikka.core.util.ResourceUtils
 import rikka.material.app.LocaleDelegate
+import rikka.shizuku.Shizuku
 import rikka.shizuku.manager.ShizukuLocales
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -75,6 +80,11 @@ private enum class SettingsCategory(
         R.string.settings_startup,
         R.string.settings_category_startup_summary,
         R.drawable.ic_server_restart
+    ),
+    SECURITY(
+        R.string.settings_security,
+        R.string.settings_category_security_summary,
+        R.drawable.ic_shield_24
     ),
     APPEARANCE(
         R.string.settings_user_interface,
@@ -175,6 +185,62 @@ class SettingsActivity : AppActivity() {
             var showNightDialog by remember { mutableStateOf(false) }
             var showModuleModeDialog by remember { mutableStateOf(false) }
             var showCustomPermissionsDialog by remember { mutableStateOf(false) }
+            var showDeliveryModeDialog by remember { mutableStateOf(false) }
+            val isRooted = remember { EnvironmentUtils.isRooted() }
+            var bootLaunchMethod by remember {
+                mutableIntStateOf(ShizukuSettings.resolveBootLaunchMethod(isRooted))
+            }
+            var bootDiscoveryTimeoutSec by remember {
+                mutableIntStateOf(ShizukuSettings.getBootDiscoveryTimeoutSeconds())
+            }
+            var bootMaxRetries by remember {
+                mutableIntStateOf(ShizukuSettings.getBootMaxRetries())
+            }
+            var bootFallbackNotification by remember {
+                mutableStateOf(ShizukuSettings.isBootFallbackNotificationEnabled())
+            }
+            var showBootMethodDialog by remember { mutableStateOf(false) }
+            var showBootTimeoutDialog by remember { mutableStateOf(false) }
+            var showBootRetriesDialog by remember { mutableStateOf(false) }
+            var serverRunning by remember { mutableStateOf(SecurityPolicyClient.isServerAvailable()) }
+            var securityPolicy by remember {
+                mutableStateOf(SecurityPolicyClient.getSecurityPolicy() ?: SecurityPolicyState())
+            }
+            var deviceUsers by remember {
+                mutableStateOf(SecurityPolicyClient.getDeviceUsers())
+            }
+
+            fun refreshSecurityState() {
+                val running = SecurityPolicyClient.isServerAvailable()
+                serverRunning = running
+                if (running) {
+                    SecurityPolicyClient.getSecurityPolicy()?.let { securityPolicy = it }
+                    deviceUsers = SecurityPolicyClient.getDeviceUsers()
+                } else {
+                    deviceUsers = emptyList()
+                }
+            }
+
+            fun updateSecurityPolicy(transform: (SecurityPolicyState) -> SecurityPolicyState) {
+                val updated = transform(securityPolicy)
+                if (SecurityPolicyClient.setSecurityPolicy(updated)) {
+                    securityPolicy = updated
+                    deviceUsers = SecurityPolicyClient.getDeviceUsers()
+                } else {
+                    refreshSecurityState()
+                }
+            }
+
+            DisposableEffect(Unit) {
+                val receivedListener = Shizuku.OnBinderReceivedListener { refreshSecurityState() }
+                val deadListener = Shizuku.OnBinderDeadListener { refreshSecurityState() }
+                Shizuku.addBinderReceivedListenerSticky(receivedListener)
+                Shizuku.addBinderDeadListener(deadListener)
+                onDispose {
+                    Shizuku.removeBinderReceivedListener(receivedListener)
+                    Shizuku.removeBinderDeadListener(deadListener)
+                }
+            }
             var phoneRoute by rememberSaveable(stateSaver = PhoneSettingsRouteSaver) {
                 mutableStateOf<PhoneSettingsRoute>(PhoneSettingsRoute.Root)
             }
@@ -229,6 +295,15 @@ class SettingsActivity : AppActivity() {
                 backgroundCheckEnabled = ModuleSettings.isBackgroundCheckEnabled()
             }
 
+            fun updateStartOnBoot(enabled: Boolean) {
+                packageManager.setComponentEnabled(componentName, enabled)
+                ShizukuSettings.setStartOnBootEnabled(enabled)
+                if (!enabled) {
+                    AdbBootStartScheduler.cancel(this@SettingsActivity)
+                }
+                startOnBoot = packageManager.isComponentEnabled(componentName)
+            }
+
             androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
                 if (isWatch) {
                     BackHandler(enabled = secondarySubscreen != SecondarySubscreen.ROOT) {
@@ -245,10 +320,7 @@ class SettingsActivity : AppActivity() {
                                 else -> {
                                     WearSettingsScreen(
                                         startOnBoot = startOnBoot,
-                                        onStartOnBootChange = { enabled ->
-                                            packageManager.setComponentEnabled(componentName, enabled)
-                                            startOnBoot = packageManager.isComponentEnabled(componentName)
-                                        },
+                                        onStartOnBootChange = { updateStartOnBoot(it) },
                                         languageSummary = languageSummary,
                                         onLanguageClick = { showLanguageDialog = true },
                                         nightModeSummary = nightSummary,
@@ -299,10 +371,7 @@ class SettingsActivity : AppActivity() {
                                     TvSettingsScreen(
                                         onNavigateUp = { finish() },
                                         startOnBoot = startOnBoot,
-                                        onStartOnBootChange = { enabled ->
-                                            packageManager.setComponentEnabled(componentName, enabled)
-                                            startOnBoot = packageManager.isComponentEnabled(componentName)
-                                        },
+                                        onStartOnBootChange = { updateStartOnBoot(it) },
                                         languageSummary = languageSummary,
                                         onLanguageClick = { showLanguageDialog = true },
                                         nightSummary = nightSummary,
@@ -432,19 +501,230 @@ class SettingsActivity : AppActivity() {
                                     ) {
                                         when (activeCategory) {
                                             SettingsCategory.STARTUP -> item {
-                                                SettingsSection(stringResource(R.string.settings_startup)) {
-                                                    SettingsSwitchItem(
-                                                        index = 0,
-                                                        count = 1,
-                                                        icon = R.drawable.ic_server_restart,
-                                                        title = stringResource(R.string.settings_start_on_boot),
-                                                        summary = stringResource(R.string.settings_start_on_boot_summary),
-                                                        checked = startOnBoot,
-                                                        onCheckedChange = { enabled ->
-                                                            packageManager.setComponentEnabled(componentName, enabled)
-                                                            startOnBoot = packageManager.isComponentEnabled(componentName)
+                                                val methodSummary = if (bootLaunchMethod == LaunchMethod.ROOT && isRooted) {
+                                                    stringResource(R.string.settings_boot_method_root)
+                                                } else if (!isRooted) {
+                                                    stringResource(R.string.settings_boot_method_wireless_only_summary)
+                                                } else {
+                                                    stringResource(R.string.settings_boot_method_wireless)
+                                                }
+
+                                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                    SettingsSection(stringResource(R.string.settings_startup)) {
+                                                        SettingsSwitchItem(
+                                                            index = 0,
+                                                            count = 2,
+                                                            icon = R.drawable.ic_server_restart,
+                                                            title = stringResource(R.string.settings_start_on_boot),
+                                                            summary = stringResource(R.string.settings_start_on_boot_summary),
+                                                            checked = startOnBoot,
+                                                            onCheckedChange = { updateStartOnBoot(it) }
+                                                        )
+                                                        SettingsItem(
+                                                            index = 1,
+                                                            count = 2,
+                                                            icon = if (bootLaunchMethod == LaunchMethod.ROOT && isRooted) {
+                                                                R.drawable.ic_root_24dp
+                                                            } else {
+                                                                R.drawable.ic_wadb_24
+                                                            },
+                                                            title = stringResource(R.string.settings_boot_method_title),
+                                                            summary = methodSummary,
+                                                            enabled = startOnBoot,
+                                                            onClick = { showBootMethodDialog = true }
+                                                        )
+                                                    }
+
+                                                    if (startOnBoot && bootLaunchMethod != LaunchMethod.ROOT) {
+                                                        SettingsSection(stringResource(R.string.settings_startup_wireless_options)) {
+                                                            SettingsItem(
+                                                                index = 0,
+                                                                count = 3,
+                                                                icon = R.drawable.ic_wadb_24,
+                                                                title = stringResource(R.string.settings_boot_timeout_title),
+                                                                summary = stringResource(R.string.settings_boot_timeout_summary, bootDiscoveryTimeoutSec),
+                                                                onClick = { showBootTimeoutDialog = true }
+                                                            )
+                                                            SettingsItem(
+                                                                index = 1,
+                                                                count = 3,
+                                                                icon = R.drawable.ic_server_restart,
+                                                                title = stringResource(R.string.settings_boot_retries_title),
+                                                                summary = stringResource(R.string.settings_boot_retries_summary, bootMaxRetries),
+                                                                onClick = { showBootRetriesDialog = true }
+                                                            )
+                                                            SettingsSwitchItem(
+                                                                index = 2,
+                                                                count = 3,
+                                                                icon = R.drawable.ic_outline_notifications_active_24,
+                                                                title = stringResource(R.string.settings_boot_fallback_notification_title),
+                                                                summary = stringResource(R.string.settings_boot_fallback_notification_summary),
+                                                                checked = bootFallbackNotification,
+                                                                onCheckedChange = { enabled ->
+                                                                    ShizukuSettings.setBootFallbackNotificationEnabled(enabled)
+                                                                    bootFallbackNotification = enabled
+                                                                }
+                                                            )
                                                         }
-                                                    )
+                                                    }
+                                                }
+                                            }
+
+                                            SettingsCategory.SECURITY -> item {
+                                                LaunchedEffect(Unit) { refreshSecurityState() }
+                                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                    if (!serverRunning) {
+                                                        SettingsSection(stringResource(R.string.settings_security)) {
+                                                            SettingsItem(
+                                                                index = 0,
+                                                                count = 1,
+                                                                icon = R.drawable.ic_warning_24,
+                                                                title = stringResource(R.string.settings_security_server_stopped_title),
+                                                                summary = stringResource(R.string.settings_security_server_stopped_summary),
+                                                                showChevron = false,
+                                                                onClick = { refreshSecurityState() }
+                                                            )
+                                                        }
+                                                    } else {
+                                                        SettingsSection(stringResource(R.string.settings_security_section_protection)) {
+                                                            SettingsSwitchItem(
+                                                                index = 0,
+                                                                count = 2,
+                                                                icon = R.drawable.ic_shield_24,
+                                                                title = stringResource(R.string.settings_security_pause_access_title),
+                                                                summary = stringResource(R.string.settings_security_pause_access_summary),
+                                                                checked = securityPolicy.accessPaused,
+                                                                onCheckedChange = { paused ->
+                                                                    updateSecurityPolicy { it.copy(accessPaused = paused) }
+                                                                }
+                                                            )
+                                                            SettingsSwitchItem(
+                                                                index = 1,
+                                                                count = 2,
+                                                                icon = R.drawable.ic_shield_24,
+                                                                title = stringResource(R.string.settings_security_block_isolated_title),
+                                                                summary = stringResource(R.string.settings_security_block_isolated_summary),
+                                                                checked = securityPolicy.blockIsolatedProfiles,
+                                                                onCheckedChange = { blocked ->
+                                                                    updateSecurityPolicy { it.copy(blockIsolatedProfiles = blocked) }
+                                                                }
+                                                            )
+                                                        }
+
+                                                        val deliverySummary = if (
+                                                            securityPolicy.binderDeliveryMode == SecurityPolicyState.BINDER_DELIVERY_AUTHORIZED_ONLY
+                                                        ) {
+                                                            stringResource(R.string.settings_security_delivery_authorized_only)
+                                                        } else {
+                                                            stringResource(R.string.settings_security_delivery_all_declared)
+                                                        }
+
+                                                        SettingsSection(stringResource(R.string.settings_security_section_delivery)) {
+                                                            SettingsItem(
+                                                                index = 0,
+                                                                count = 2,
+                                                                icon = R.drawable.ic_settings_outline_24dp,
+                                                                title = stringResource(R.string.settings_security_delivery_mode_title),
+                                                                summary = deliverySummary,
+                                                                onClick = { showDeliveryModeDialog = true }
+                                                            )
+                                                            SettingsSwitchItem(
+                                                                index = 1,
+                                                                count = 2,
+                                                                icon = R.drawable.ic_baseline_link_24,
+                                                                title = stringResource(R.string.settings_security_legacy_wire_title),
+                                                                summary = stringResource(R.string.settings_security_legacy_wire_summary),
+                                                                checked = securityPolicy.allowLegacyWire,
+                                                                onCheckedChange = { allowed ->
+                                                                    updateSecurityPolicy { it.copy(allowLegacyWire = allowed) }
+                                                                }
+                                                            )
+                                                        }
+
+                                                        SettingsSection(stringResource(R.string.settings_security_section_users)) {
+                                                            SettingsSwitchItem(
+                                                                index = 0,
+                                                                count = 2,
+                                                                icon = R.drawable.ic_system_icon,
+                                                                title = stringResource(R.string.settings_security_allow_work_profile_title),
+                                                                summary = stringResource(R.string.settings_security_allow_work_profile_summary),
+                                                                checked = securityPolicy.allowWorkProfile,
+                                                                onCheckedChange = { allowed ->
+                                                                    updateSecurityPolicy { it.copy(allowWorkProfile = allowed) }
+                                                                }
+                                                            )
+                                                            SettingsSwitchItem(
+                                                                index = 1,
+                                                                count = 2,
+                                                                icon = R.drawable.ic_system_icon,
+                                                                title = stringResource(R.string.settings_security_allow_secondary_users_title),
+                                                                summary = stringResource(R.string.settings_security_allow_secondary_users_summary),
+                                                                checked = securityPolicy.allowSecondaryUsers,
+                                                                onCheckedChange = { allowed ->
+                                                                    updateSecurityPolicy { it.copy(allowSecondaryUsers = allowed) }
+                                                                }
+                                                            )
+                                                        }
+
+                                                        if (deviceUsers.isNotEmpty()) {
+                                                            SettingsSection(stringResource(R.string.settings_security_section_detected_users)) {
+                                                                deviceUsers.forEachIndexed { index, user ->
+                                                                    val kindLabel = when (user.kind) {
+                                                                        DeviceUserEntry.KIND_PRIMARY -> stringResource(R.string.settings_security_user_kind_primary)
+                                                                        DeviceUserEntry.KIND_WORK_PROFILE -> stringResource(R.string.settings_security_user_kind_work)
+                                                                        DeviceUserEntry.KIND_ISOLATED_CONTAINER -> stringResource(R.string.settings_security_user_kind_isolated)
+                                                                        else -> stringResource(R.string.settings_security_user_kind_secondary)
+                                                                    }
+                                                                    val userTitle = "${user.name} (ID ${user.userId})"
+                                                                    if (user.isPrimary) {
+                                                                        SettingsItem(
+                                                                            index = index,
+                                                                            count = deviceUsers.size,
+                                                                            icon = R.drawable.ic_shield_24,
+                                                                            title = userTitle,
+                                                                            summary = "$kindLabel • ${stringResource(R.string.settings_security_user_always_allowed)}",
+                                                                            showChevron = false,
+                                                                            onClick = null
+                                                                        )
+                                                                    } else if (user.isIsolated && securityPolicy.blockIsolatedProfiles) {
+                                                                        SettingsItem(
+                                                                            index = index,
+                                                                            count = deviceUsers.size,
+                                                                            icon = R.drawable.ic_warning_24,
+                                                                            title = userTitle,
+                                                                            summary = "$kindLabel • ${stringResource(R.string.settings_security_user_blocked_by_policy)}",
+                                                                            showChevron = false,
+                                                                            onClick = null
+                                                                        )
+                                                                    } else {
+                                                                        SettingsSwitchItem(
+                                                                            index = index,
+                                                                            count = deviceUsers.size,
+                                                                            icon = R.drawable.ic_system_icon,
+                                                                            title = userTitle,
+                                                                            summary = kindLabel,
+                                                                            checked = user.allowed,
+                                                                            onCheckedChange = { enabled ->
+                                                                                updateSecurityPolicy { cur ->
+                                                                                    val nextUsers = cur.allowedUserIds.toMutableSet()
+                                                                                    if (enabled) {
+                                                                                        nextUsers.add(user.userId)
+                                                                                    } else {
+                                                                                        nextUsers.remove(user.userId)
+                                                                                    }
+                                                                                    cur.copy(
+                                                                                        allowedUserIds = nextUsers,
+                                                                                        allowWorkProfile = if (!enabled && user.isWorkProfile) false else cur.allowWorkProfile,
+                                                                                        allowSecondaryUsers = if (!enabled && !user.isWorkProfile && !user.isIsolated) false else cur.allowSecondaryUsers
+                                                                                    )
+                                                                                }
+                                                                            }
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
 
@@ -811,6 +1091,121 @@ class SettingsActivity : AppActivity() {
                                 }
                             )
                         }
+                    }
+                }
+
+                if (showDeliveryModeDialog) {
+                    val deliveryChoices = listOf(
+                        ChoiceOption(
+                            title = stringResource(R.string.settings_security_delivery_all_declared),
+                            summary = stringResource(R.string.settings_security_delivery_all_declared_summary),
+                            icon = R.drawable.ic_settings_outline_24dp
+                        ),
+                        ChoiceOption(
+                            title = stringResource(R.string.settings_security_delivery_authorized_only),
+                            summary = stringResource(R.string.settings_security_delivery_authorized_only_summary),
+                            icon = R.drawable.ic_shield_24
+                        )
+                    )
+                    val selectedDelivery = if (
+                        securityPolicy.binderDeliveryMode == SecurityPolicyState.BINDER_DELIVERY_AUTHORIZED_ONLY
+                    ) 1 else 0
+                    ShizukuExpressiveTheme {
+                        ChoiceDialog(
+                            title = stringResource(R.string.settings_security_delivery_mode_title),
+                            choices = deliveryChoices,
+                            selectedIndex = selectedDelivery,
+                            onDismiss = { showDeliveryModeDialog = false },
+                            onSelect = { index ->
+                                val mode = if (index == 1) {
+                                    SecurityPolicyState.BINDER_DELIVERY_AUTHORIZED_ONLY
+                                } else {
+                                    SecurityPolicyState.BINDER_DELIVERY_ALL_DECLARED
+                                }
+                                updateSecurityPolicy { it.copy(binderDeliveryMode = mode) }
+                                showDeliveryModeDialog = false
+                            }
+                        )
+                    }
+                }
+
+                if (showBootMethodDialog) {
+                    val bootMethodChoices = listOf(
+                        ChoiceOption(
+                            title = stringResource(R.string.settings_boot_method_wireless),
+                            summary = stringResource(R.string.settings_boot_method_wireless_desc),
+                            icon = R.drawable.ic_wadb_24,
+                            enabled = true
+                        ),
+                        ChoiceOption(
+                            title = stringResource(R.string.settings_boot_method_root),
+                            summary = if (isRooted) {
+                                stringResource(R.string.settings_boot_method_root_desc)
+                            } else {
+                                stringResource(R.string.settings_boot_method_root_unavailable)
+                            },
+                            icon = R.drawable.ic_root_24dp,
+                            enabled = isRooted
+                        )
+                    )
+                    val selectedMethodIndex = if (bootLaunchMethod == LaunchMethod.ROOT && isRooted) 1 else 0
+                    ShizukuExpressiveTheme {
+                        ChoiceDialog(
+                            title = stringResource(R.string.settings_boot_method_title),
+                            choices = bootMethodChoices,
+                            selectedIndex = selectedMethodIndex,
+                            onDismiss = { showBootMethodDialog = false },
+                            onSelect = { index ->
+                                val chosen = if (index == 1 && isRooted) LaunchMethod.ROOT else LaunchMethod.ADB
+                                ShizukuSettings.setLastLaunchMode(chosen)
+                                bootLaunchMethod = chosen
+                                showBootMethodDialog = false
+                            }
+                        )
+                    }
+                }
+
+                if (showBootTimeoutDialog) {
+                    val timeoutValues = listOf(15, 25, 45, 60)
+                    val timeoutChoices = timeoutValues.map { sec ->
+                        ChoiceOption(title = stringResource(R.string.settings_boot_timeout_summary, sec))
+                    }
+                    val selectedTimeout = timeoutValues.indexOf(bootDiscoveryTimeoutSec).coerceAtLeast(0)
+                    ShizukuExpressiveTheme {
+                        ChoiceDialog(
+                            title = stringResource(R.string.settings_boot_timeout_title),
+                            choices = timeoutChoices,
+                            selectedIndex = selectedTimeout,
+                            onDismiss = { showBootTimeoutDialog = false },
+                            onSelect = { index ->
+                                val chosen = timeoutValues[index]
+                                ShizukuSettings.setBootDiscoveryTimeoutSeconds(chosen)
+                                bootDiscoveryTimeoutSec = chosen
+                                showBootTimeoutDialog = false
+                            }
+                        )
+                    }
+                }
+
+                if (showBootRetriesDialog) {
+                    val retryValues = listOf(2, 4, 6)
+                    val retryChoices = retryValues.map { count ->
+                        ChoiceOption(title = stringResource(R.string.settings_boot_retries_summary, count))
+                    }
+                    val selectedRetries = retryValues.indexOf(bootMaxRetries).coerceAtLeast(0)
+                    ShizukuExpressiveTheme {
+                        ChoiceDialog(
+                            title = stringResource(R.string.settings_boot_retries_title),
+                            choices = retryChoices,
+                            selectedIndex = selectedRetries,
+                            onDismiss = { showBootRetriesDialog = false },
+                            onSelect = { index ->
+                                val chosen = retryValues[index]
+                                ShizukuSettings.setBootMaxRetries(chosen)
+                                bootMaxRetries = chosen
+                                showBootRetriesDialog = false
+                            }
+                        )
                     }
                 }
 

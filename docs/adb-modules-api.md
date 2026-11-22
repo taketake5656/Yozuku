@@ -1,213 +1,143 @@
-# Yozuku ADB モジュール API
+# ADB モジュール API 仕様
 
 **日本語** | [English](adb-modules-api.en.md)
 
-ADB モジュールは、Yozuku アプリのプライベートストレージにインストールされ、現在動作中の Yozuku サーバーを通じて実行される ZIP パッケージです。Yozuku が ADB で起動されている場合、モジュールのスクリプトは ADB シェルの権限で実行されます。Yozuku が root で起動されている場合は、root 権限で実行されます。
+ADB モジュールは、Yozuku のアプリ専用のストレージにインストールされ、動作中の `shizuku_server` のプロセス（ADB なら UID `2000`、root なら UID `0`）で実行される ZIP アーカイブです。この実行環境は、管理されたスクリプト／WebUI の実行環境であり、システムを書き換えない root 用のオーバーレイのファイルシステムではありません。
 
-これは root のオーバーレイシステムではありません。アクション、WebUI、サービスフック、そして制御された ADB/root シェルアクセスのための、Yozuku を基盤としたモジュールランナーです。
+## アーカイブの構成
 
-## パッケージ形式
-
-モジュールは、ZIP のルートに `module.prop` を含む `.zip` ファイルです。
+正しいモジュールのアーカイブは、ZIP のルートに `module.prop` を含みます。絶対パスや `..` を含むパスは、展開のときに拒否されます。
 
 ```text
 module.zip
 ├── module.prop
-├── banner.png
+├── banner.png               （任意: .png、.jpg、.jpeg、.webp）
 ├── nightzuku-guard.sh       （任意: フォーク対策のシェル用ガード）
-├── action.sh
-├── service.sh
-└── webui/
+├── action.sh                （任意: 手動で実行するアクションのスクリプト）
+├── service.sh               （任意: バックグラウンド用のフック）
+└── webui/                   （任意: webroot/、webui/、web/ のいずれか）
     ├── nightzuku-guard.js   （任意: フォーク対策の WebUI 用ガード）
     └── index.html
 ```
 
-すべてのパスは相対パスである必要があります。絶対パスや `..` によるトラバーサルは、インストール時に拒否されます。
+## `module.prop` の項目
 
-## module.prop
+| 項目 | 必須 | 制約・既定値 |
+| :--- | :--- | :--- |
+| `id` | はい | 正規表現 `[A-Za-z][A-Za-z0-9._-]{1,63}` |
+| `name` | はい | 表示名 |
+| `version` | はい | 表示用のバージョンの文字列 |
+| `versionCode` | はい | アップデートのたびに大きくなる整数 |
+| `author` | はい | 作者 |
+| `description` | はい | 短い説明 |
+| `banner` | いいえ | `.png`／`.jpg`／`.jpeg`／`.webp` への相対パス。`banner.*` は自動で見つけます |
+| `webui` | いいえ | `index.html` があるフォルダ。`webroot`、`webui`、`web` は自動で見つけます |
+| `action` | いいえ | 既定値: `action.sh` |
+| `usesShellBridge` | いいえ | `true` にすると、WebUI に `window.Nightzuku` / `window.Shizuku` を公開します |
+| `requireNightzuku` | いいえ | インストール時と実行時のガードの確認で、本物の Nightzuku のホストであることを求めます |
+| `minNightzukuApi` | いいえ | `NIGHTZUKU_MODULES_API` の最小値（整数） |
+| `minNightzukuVersion` | いいえ | Nightzuku のメジャーバージョン／バージョンの最小値 |
+| `updateJson` | いいえ | アップデートの情報の HTTPS の URL |
 
-必須フィールド:
+`service.sh` は、モジュールのルートにあれば自動で見つけます。
 
-```properties
-id=my-module
-name=My Module
-version=1.0
-versionCode=1
-author=Author
-description=Short description
-```
+## インストールの流れと安全のための制限
 
-任意フィールド:
+1. アーカイブを、バイト数の上限を設けながらキャッシュに読み込みます。
+2. `module.prop` を読み取り、`minNightzukuApi` / `minNightzukuVersion` を確認します。
+3. 正規化したパスがフォルダの中にあることを確かめながら（`ModuleRuntimeUtils.ensureInside`）、一時フォルダに展開します。
+4. `.sh` のファイルに実行権限を付け、ホストの証明の情報 `.nightzuku_env` を作ります。
+5. アップデートのときは、既存のフォルダを `<id>.backup` に移し、`.source.prop` と `disable` の状態を引き継ぎます。失敗したときは、まとめて元に戻します。
 
-```properties
-banner=banner.png
-webui=webui
-action=action.sh
-usesShellBridge=true
-requireNightzuku=true
-minNightzukuApi=1
-minNightzukuVersion=13
-updateJson=https://example.com/update.json
-```
+> 注: コード（`AdbModuleManager.kt`）では、一時フォルダは `.<id>.installing`、バックアップは `.<id>.backup` と、名前の先頭にドットが付きます。
 
-ルール:
+| パラメーター | 上限 |
+| :--- | :--- |
+| ZIP のエントリーの最大数 | `2048` |
+| 展開後の最大サイズ | `200 MB` |
+| スクリプトの実行のタイムアウト | `120 秒`（終了コード `124`） |
+| 保持する stdout / stderr | それぞれ最後の `64 KB` |
+| WebUI の `download()` のファイルの上限 | `20 MB`（HTTPS のみ。`index.html` は上書きできない） |
+| WebUI の `execWithOptions` の標準入力の上限 | `64 KB` |
 
-- `id` は `[A-Za-z][A-Za-z0-9._-]{1,63}` に一致する必要があります。
-- `banner` には `.png`、`.jpg`、`.jpeg`、`.webp` を指定できます。
-- `banner` を省略した場合、Yozuku は `banner.png`、`banner.jpg`、`banner.jpeg`、`banner.webp` の順に確認します。
-- `webui` を省略した場合、Yozuku は `webroot`、`webui`、`web` の順に確認します。
-- WebUI は `<webui>/index.html` が存在する場合にのみ利用できます。
-- `action` の既定値は `action.sh` です。
-- `service.sh` は自動的に検出されます。
-- `requireNightzuku`、`minNightzukuApi`、`minNightzukuVersion` は、インストール時とガードによる実行時の確認で、本物の Nightzuku のホストであることを求める条件です。
-  - `minNightzukuApi` はモジュール API のバージョン（現在は `2`）と比べます。
-  - `minNightzukuVersion` はアプリの `versionCode` と比べます。
-  - この 2 つの条件を満たさないモジュールはインストールできません。
-  - `requireNightzuku` は目印です。アプリのコードはこの値を読んでいません。
+## 実行時の環境
 
-## インストールとアップデートの動作
+スクリプトは、標準入力から `sh -s <モジュール ID>` に渡され、作業フォルダ（cwd）は `$MODDIR` になります。これにより、`argv` の 128 KB の制限を避けつつ、`$0` を `<モジュール ID>` にしています。常に `$MODDIR` を使い、`/data/adb/modules` を前提にしないでください。
 
-インストールの流れ:
+> 注: 実際には `sh -s <モジュール ID>` の形で起動するため、`$0` は `sh`、モジュール ID は `$1` になります（`AdbModuleManager.kt` のコメントにも「`$0 == "sh"`」とあります）。
 
-1. ユーザーが Android のファイル選択画面でモジュールの ZIP を選ぶか、GitHub のモジュールカタログからインストールします。
-2. Yozuku が ZIP をキャッシュにコピーします。読み込む量には上限（`200 MB`）があります。
-3. Yozuku が `module.prop` を検証し、`minNightzukuApi` と `minNightzukuVersion` を確認します。
-4. Yozuku がステージング用ディレクトリに展開し、安全でない相対パスや、正規化するとモジュールの外を指すパスを拒否します。
-5. Yozuku が `.sh` ファイルに実行権限を付け、ホストの証明のための `.nightzuku_env` を作ります。
-6. 既存のモジュールをアップデートするときは、`<id>.backup` ディレクトリにバックアップを作り、`.source.prop` と `disable` の状態を引き継ぎます。インストールに失敗したときは自動で元に戻します。
+| 変数 | 値 |
+| :--- | :--- |
+| `MODDIR` | `/data/user/0/kerneldroid.nightzuku/files/adb_modules/<id>`（注を参照） |
+| `ASH_STANDALONE` | `1` |
+| `SHIZUKU_MODULE_ID` | モジュールの `id` |
+| `SHIZUKU_MODULE_MODE` | `safe` \| `custom` \| `full` |
+| `SHIZUKU_MODULE_TRUSTED` | `0` \| `1` |
+| `SHIZUKU_MODULE_BACKGROUND` | `0` \| `1` |
+| `NIGHTZUKU_HOST` | `1` |
+| `NIGHTZUKU_HOST_PKG` | `kerneldroid.nightzuku` |
+| `NIGHTZUKU_HOST_VERSION` | アプリの `versionName` |
+| `NIGHTZUKU_HOST_VERSION_CODE` | アプリの `versionCode` |
+| `NIGHTZUKU_MODULES_API` | `2` |
+| `NIGHTZUKU_BINDER_DESCRIPTOR` | `kerneldroid.nightzuku.INightService` |
+| `NIGHTZUKU_PROVIDER_AUTHORITY` | `kerneldroid.nightzuku.nightzuku`（注を参照） |
+| `NIGHTZUKU_SIGNER_SHA256` | アプリの署名証明書の SHA-256（16 進数） |
+| `NIGHTZUKU_SESSION_TOKEN` | モジュールに結び付いた 64 文字の HMAC-SHA256 のトークン |
 
-安全上の制限:
-
-- ZIP の最大エントリ数: `2048`。
-- 展開後の最大サイズ: `200 MB`。
-- メモリ／ログに保持されるスクリプト出力: ストリームごとに最後の `64 KB`。
-- スクリプトのタイムアウト: `120 秒`。
-
-## 実行環境
-
-スクリプトは Yozuku サーバーのプロセス生成機能を通じて実行されます。スクリプトの内容は標準入力から `sh -s <モジュール ID>` に渡され、作業ディレクトリはモジュールのディレクトリです。こうすることで `argv` の 128 KB の制限を避け、`$0` がモジュール ID になります。
-
-スクリプトを実行するたびに渡される環境変数:
-
-```sh
-MODDIR=/data/user/0/kerneldroid.nightzuku/files/adb_modules/<id>
-ASH_STANDALONE=1
-SHIZUKU_MODULE_ID=<id>
-SHIZUKU_MODULE_MODE=safe|custom|full
-SHIZUKU_MODULE_TRUSTED=0|1
-SHIZUKU_MODULE_BACKGROUND=0|1
-NIGHTZUKU_HOST=1
-NIGHTZUKU_HOST_PKG=kerneldroid.nightzuku
-NIGHTZUKU_HOST_VERSION=<アプリの versionName>
-NIGHTZUKU_HOST_VERSION_CODE=<アプリの versionCode>
-NIGHTZUKU_MODULES_API=2
-NIGHTZUKU_BINDER_DESCRIPTOR=kerneldroid.nightzuku.INightService
-NIGHTZUKU_PROVIDER_AUTHORITY=kerneldroid.nightzuku.nightzuku
-NIGHTZUKU_SIGNER_SHA256=<アプリの署名証明書の SHA-256>
-NIGHTZUKU_SESSION_TOKEN=<モジュール ID に結び付いた 64 文字の HMAC-SHA256 トークン>
-```
-
-> 上流の英語の文書（r62）では `NIGHTZUKU_PROVIDER_AUTHORITY` が `kerneldroid.nightzuku.shizuku` と書かれていますが、コード（`ModuleRuntimeUtils.kt`）が設定する値は `kerneldroid.nightzuku.nightzuku` です。このページはコードに合わせています。どちらのオーソリティも同じプロバイダ（`ShizukuManagerProvider`）を指します。
-
-モジュール内のファイルには、すべて `MODDIR` を使用してください。`/data/adb/modules` のような root 向けのパスを前提にしないでください。
-
-## フォーク対策のホストの証明（`nightzuku-guard.sh` と `nightzuku-guard.js`）
-
-サードパーティのフォーク（「Shizuku Next」など）には、Nightzuku のモジュールの画面だけをまねて、独自のプロトコル `kerneldroid.nightzuku.INightService`（デュアルワイヤー）、`MODDIR` の分離、WebUI のシェルブリッジをきちんと実装していないものがあります。モジュールの作者は、`nightzuku-guard.sh` と `webui/nightzuku-guard.js` をモジュールに入れておくと、そうした不完全なフォークでの実行を止め、本家の Nightzuku（`https://github.com/kerneldroid/Nightzuku`）を案内するエラーメッセージを表示できます。
-
-> **Yozuku での動作**: Yozuku はパッケージ ID（`kerneldroid.nightzuku`）とプロトコルを変えていないフォークなので、ガードの確認は通ります。ただし、モジュールの作者が本家の署名証明書の SHA-256 を指定している場合（下記の「署名の固定」）は、署名が違うため Yozuku では実行が止まります。
-
-### 何段階かの確認のしくみ
-
-1. **パスとパッケージの確認**: `MODDIR` が `kerneldroid.nightzuku` の中にあること、`NIGHTZUKU_HOST_PKG=kerneldroid.nightzuku`、`NIGHTZUKU_BINDER_DESCRIPTOR=kerneldroid.nightzuku.INightService` であることを確かめます。
-2. **署名付きの環境ファイル（`.nightzuku_env`）**: スクリプトを実行する前に、`AdbModuleManager` が `$MODDIR/.nightzuku_env` に、モジュールに結び付いた `NIGHTZUKU_SESSION_TOKEN`（HMAC-SHA256）を書き込みます。
-3. **Binder による問い合わせ（`verifyNightzukuHost`）**:
-   - **シェル（`nightzuku-guard.sh`）**: 次を呼び出します。
-     ```sh
-     content call --uri content://kerneldroid.nightzuku.nightzuku \
-       --method verifyNightzukuHost \
-       --arg "guard-probe"
-     ```
-     `ShizukuManagerProvider` が HMAC-SHA256 のトークンを計算し、`genuine=true`、`hostPackage=kerneldroid.nightzuku`、`binderDescriptor=kerneldroid.nightzuku.INightService`、`modulesApiVersion`、`attestationToken` を返します。SELinux で `content call` が使えないときは、`NIGHTZUKU_SESSION_TOKEN` と `.nightzuku_env` に書かれたトークンを比べる方法に切り替えます。
-   - **WebUI（`nightzuku-guard.js`）**: `window.Nightzuku.verifyHost(nonce)`（`window.Shizuku.verifyHost(nonce)` でも可）を呼び出し、返ってきたホストの情報と 64 桁の 16 進数のトークンを確かめます。対応していないフォークの中で読み込まれたときは、画面全体をふさぐ警告を表示します。
-4. **署名の固定（任意）**: 期待するアプリの署名証明書の SHA-256 を指定すると、`NIGHTZUKU_SIGNER_SHA256` と一致しない場合に止まります（シェルは `require_nightzuku_host "<SHA-256>"`、WebUI は `expectedSignerSha256` を指定）。
-
-### `action.sh` と `service.sh` での使い方
-
-ガードを読み込んだあと、`require_nightzuku_host` を呼び出します（読み込むだけでは確認は行われません。テスト用モジュールの `action.sh` と同じ書き方です）。
-
-```sh
-#!/system/bin/sh
-MODDIR="${MODDIR:-${0%/*}}"
-[ -f "$MODDIR/nightzuku-guard.sh" ] && . "$MODDIR/nightzuku-guard.sh"
-require_nightzuku_host
-```
-
-### `webui/index.html` での使い方
-
-ガードを最初に読み込み、`NightzukuGuard.enforce(...)` を呼び出します（テスト用モジュールの `webui/index.html` と同じ書き方です）。
-
-```html
-<script src="nightzuku-guard.js"></script>
-<script>
-  NightzukuGuard.enforce({ minApiVersion: 2 });
-</script>
-```
-
-> 上流の英語の文書には `require_nightzuku_host` と `NightzukuGuard.enforce(...)` の呼び出しが書かれていませんが、このページではテスト用モジュールのコードに合わせて補っています。
-
-## アクション
-
-`action.sh` は、モジュールのカードからユーザーが手動で実行するアクションです。
-
-アクションの結果:
-- stdout／stderr はダイアログに表示されます。
-- 最後の出力はモジュールディレクトリ内の `logs/action-last.log` に書き込まれます。
-- タイムアウト（120 秒）時は終了コード `124` を返します。
-
-## サービス
-
-`service.sh` はバックグラウンド用のフックです。
-
-実行ポリシー:
-- **セーフモード**: ブロックされます。
-- **カスタム／フルアクセスモード**: サービスの権限と「バックグラウンドアクションを許可」が有効な場合（またはモジュールが完全信頼の場合）に許可されます。
-- サービススクリプトは Yozuku の binder セッションごとに 1 回実行されます（モジュールのアップデート後やサーバーの再起動後にも自動で実行し直されます）。
-- 最後の出力は `logs/service-last.log` に書き込まれます。
-- タイムアウト（120 秒）時は終了コード `124` を返します。
-
-## WebUI、仮想 HTTPS のアセットサーバー、ES6 モジュール
-
-WebUI の `webui/index.html` は、`ModuleWebAssetServer` によって、モジュールごとに分けられた仮想の HTTPS のオリジン（`https://mod-<sha256_prefix>.appassets.androidplatform.net/`）から配信されます。`<sha256_prefix>` は、小文字にしたモジュール ID の SHA-256 の先頭 8 バイト（16 進数で 16 文字）です。
-
-- **完全信頼なしで ES6 モジュールが使える**: `<script type="module" src="...">`、静的・動的な `import`／`export`（`.js`、`.mjs`、`.cjs`。拡張子を省いた import も可）、`fetch()`、Web Worker、WASM（`.wasm`）、CSS の `@import` が、通常のブラウザーの同一オリジンのルールで、有効なすべてのモジュールで使えます。**完全信頼は必要ありません**。
-- **モジュールごとのオリジンの分離**: モジュール ID ごとに別のサブドメインになるので、`localStorage`、`sessionStorage`、`IndexedDB`、`CacheStorage` がほかのモジュールと混ざりません。
-- **`file://` を直接開かない**: WebView の `file://` と `content://` へのアクセス（`allowFileAccess`、`allowFileAccessFromFileURLs`、`allowUniversalAccessFromFileURLs`）は、すべてのモジュールで無効です。配信するファイルのパスは、正規化したうえで `webRoot` の中にあるかを確かめます。
-- **組み込みの ES6 ブリッジモジュール（`/__nightzuku__/bridge.js` または `/nightzuku.mjs`）**: ES6 モジュールから、非同期のヘルパーを直接 import できます。
-  ```js
-  import { exec, getModuleInfo, verifyHost, download } from "/__nightzuku__/bridge.js";
-  ```
-- `module.prop` に `usesShellBridge=true` があり、ポリシーで許可されている場合は、従来どおりグローバルの `window.Nightzuku` と `window.Shizuku` の両方も公開されます。
-
-> 補足（コードとの違い）: 上流の英語の文書では、パスの確認に `ModuleRuntimeUtils.ensureInside` を使うと書かれていますが、`ModuleWebAssetServer` が実際に使っているのは `ModuleRuntimeUtils.isInside` です（動作は同じく `webRoot` の外を拒否します）。また、モジュールごとのオリジンのほかに、共通のホスト `appassets.androidplatform.net` を明示した URL も互換のために受け付けます。
+> 注（コードとの違い）:
 >
-> 組み込みの `bridge.js` は `window.Nightzuku`（または `window.Shizuku`）を包んだものなので、ES6 モジュール自体の読み込みに完全信頼は不要でも、`exec` などのヘルパーを使うにはブリッジが公開されている必要があります。ブリッジが公開されていないと、`exec`・`verifyHost`・`download` などはエラーを投げます（`isBridgeAvailable()` で確かめられます）。コード上、ブリッジが公開されるのは、モジュールが有効で、アクセスポリシーがブリッジを許可し、`usesShellBridge=true`（または完全信頼）で、さらに WebView のインターネットがオフ（または完全信頼）の場合です。
+> - **`MODDIR`**: r63 のコード（`ModuleRuntimeUtils.buildModuleEnvironment`、`syncModuleToShellRuntime`）では、`action.sh` / `service.sh` を実行する前に、モジュールのフォルダを tar でシェル用のフォルダ `/data/local/tmp/kerneldroid.nightzuku/adb_modules/<id>` に写し、`MODDIR` と作業フォルダもそこにします。ADB（UID `2000`、`u:r:shell:s0`）で動くサーバーが、SELinux の制限でアプリの専用フォルダを読めない問題を避けるためです。上流の文書の `/data/user/0/...` は、アプリ側にあるモジュール本体の場所です。
+> - **`NIGHTZUKU_PROVIDER_AUTHORITY`**: 上流の英語の文書は `kerneldroid.nightzuku.shizuku` としていますが、コード（`ModuleRuntimeUtils.kt`）が設定する値は `kerneldroid.nightzuku.nightzuku` です（`NightProtocol.PROVIDER_SUFFIX` が `.nightzuku`）。このページはコードに合わせています。どちらのオーソリティも同じプロバイダ（`ShizukuManagerProvider`）を指します。
 
-### ブリッジのメソッド
+## 実行のポリシー
 
-- `window.Nightzuku.getModuleInfo()` — `id`、`name`、`version`、`versionCode`、`author`、`description`、`enabled`、`trusted`、`accessMode`、`hostPackage`、`hostVersionCode`、`wireDescriptor`、`moduleApiVersion`、`hostToken` を含む JSON を返します。
-- `window.Nightzuku.verifyHost(nonce)` — `nightzuku-guard.js` が使う、暗号によるホストの証明です。
-- `window.Nightzuku.exec(command)` — 既定のタイムアウト（`120 秒`）でシェルのコマンドを実行します。
-- `window.Nightzuku.execWithOptions(command, optionsJson)` — `timeoutSeconds`、`cwd`、`stdin`（最大 64 KB）、`env` を指定して実行します。
-- `window.Nightzuku.download(url, relativeWebPath)` — HTTPS のファイル（最大 20 MB）をモジュールの WebUI のディレクトリにダウンロードします（`index.html` は上書きできません）。
+| フック | 実行のきっかけ | セーフモード | カスタム／フルアクセスモード | ログファイル |
+| :--- | :--- | :--- | :--- | :--- |
+| `action.sh` | ユーザーが手動で実行 | 許可 | 許可 | `logs/action-last.log` |
+| `service.sh` | Binder のセッションごとに 1 回、およびアップデートの後 | ブロック | サービスの権限と「バックグラウンドアクション」が有効なとき（または完全信頼）に許可 | `logs/service-last.log` |
 
-> 補足（コードとの違い）: 上流の英語の文書には書かれていませんが、コード（`ModuleJsBridge.kt`）には次のメソッドもあり、組み込みの `bridge.js` からも使えます。
+## フォーク対策のホストの証明（`nightzuku-guard`）
+
+モジュールに `nightzuku-guard.sh` と `webui/nightzuku-guard.js` を入れておくと、`INightService` や完全な WebUI のブリッジを持たない、対応していないフォークでの実行を拒否できます。
+
+1. **身元の確認**: `MODDIR`、`NIGHTZUKU_HOST_PKG`、`NIGHTZUKU_BINDER_DESCRIPTOR` を確かめます。
+2. **署名付きの環境ファイル**: `NIGHTZUKU_SESSION_TOKEN` を `$MODDIR/.nightzuku_env` と比べます。
+3. **IPC による問い合わせ（`verifyNightzukuHost`）**:
+   - シェル: `content call --uri content://kerneldroid.nightzuku.nightzuku --method verifyNightzukuHost --arg "guard-probe"`（SELinux で `content call` が使えないときは、`.nightzuku_env` のトークンでの確認に切り替えます）。
+   - WebUI: `window.Nightzuku.verifyHost(nonce)` で、`genuine=true` と 64 桁の 16 進数の HMAC のトークンを確かめます。
+
+> 注: 上流の英語の文書は、シェルの例の URI を `content://kerneldroid.nightzuku.shizuku` としていますが、テスト用モジュールの `nightzuku-guard.sh` が問い合わせるのは `content://kerneldroid.nightzuku.nightzuku`（`NIGHTZUKU_REQUIRED_AUTHORITY`）です。このページはガードのコードに合わせています。
 >
-> - `getRuntimeInfo()` — 現在は `getModuleInfo()` と同じ JSON を返します。
-> - `readText(relativePath)` — モジュールのフォルダ内のテキストファイル（最大 2 MB）を読み込みます。
-> - `writeText(relativePath, content)` — モジュールのフォルダ内にテキストファイル（最大 2 MB）を書き込みます。`module.prop`、`disable` などは書き換えられず、完全信頼でないモジュールは `index.html` と `nightzuku-guard.*` も書き換えられません。
-> - `listFiles(relativePath)` — モジュールのフォルダ内のファイルの一覧を返します。
+> ガードは読み込むだけでは確認を行いません。シェルではガードを読み込んだあとに `require_nightzuku_host` を、WebUI では `NightzukuGuard.enforce(...)` を呼び出してください（テスト用モジュールの `action.sh` と `webui/index.html` と同じ書き方です。使い方は [ADB モジュール ガイド](adb-modules-guide.md) を参照）。
+>
+> ガードには、期待するアプリの署名証明書の SHA-256 を指定して、`NIGHTZUKU_SIGNER_SHA256` と一致しなければ止める機能もあります（シェルは `require_nightzuku_host "<SHA-256>"`、WebUI は `expectedSignerSha256`）。
+>
+> **Yozuku での動作**: Yozuku はパッケージ ID（`kerneldroid.nightzuku`）とプロトコルを変えていないフォークなので、ガードの確認は通ります。ただし、モジュールの作者が本家の署名証明書の SHA-256 を指定している場合は、署名が違うため Yozuku では実行が止まります。
 
-## バックグラウンドでのアップデート
+## 仮想 HTTPS の WebUI と JavaScript のブリッジ
 
-定期的なアップデートの確認は Android の `JobScheduler`（`ModuleUpdateScheduler` と `ModuleUpdateJobService`）で予約され、特権が必要な自動アップデートと `service.sh` の再実行は `NightDogClient` が受け持ちます。詳しくは [NightDog とバックグラウンドでのモジュールのアップデートのしくみ](nightdog.md) を参照してください。
+各モジュールの WebUI は、`ModuleWebAssetServer` によって、モジュールごとに分けられた仮想の HTTPS のオリジンから配信されます。
+
+```text
+https://mod-<sha256_prefix>.appassets.androidplatform.net/
+```
+
+- **分離**: モジュールごとに別のサブドメインになるので、`localStorage`、`sessionStorage`、`IndexedDB`、`CacheStorage` がモジュールごとに分かれます。WebView から `file://` と `content://` を直接開くことはできません。
+- **ES6 モジュールにそのまま対応**: `<script type="module">`、`import`/`export`（`.js`、`.mjs`、`.cjs`）、`fetch()`、Web Worker、`.wasm` が、完全信頼なしで使えます。
+- **組み込みの ES6 ブリッジ**: `import { exec, getModuleInfo, verifyHost, download } from "/__nightzuku__/bridge.js";`（`/nightzuku.mjs` でも同じ）。
+
+| ブリッジのメソッド | 説明 |
+| :--- | :--- |
+| `getModuleInfo()` | JSON の情報（`id`、`version`、`accessMode`、`trusted`、`hostPackage`、`wireDescriptor`、`moduleApiVersion`、`hostToken`）を返します |
+| `verifyHost(nonce)` | `nightzuku-guard.js` が使う、署名付きのホストの証明を返します |
+| `exec(command)` | 既定のタイムアウト `120 秒` でシェルのコマンドを実行します |
+| `execWithOptions(command, optionsJson)` | `timeoutSeconds`、`cwd`、`stdin`（`64 KB` 以下）、`env` を指定して実行します |
+| `download(url, relativeWebPath)` | HTTPS のファイル（`20 MB` 以下）を、モジュールの WebUI のフォルダにダウンロードします（`index.html` は上書きできません） |
+
+> 注（コードとの違い）:
+>
+> - WebUI の配信では、`ModuleRuntimeUtils.isInside` で、正規化したパスが `webRoot` の中にあるかを確かめます。また、モジュールごとのオリジンのほかに、共通のホスト `appassets.androidplatform.net` を明示した URL も互換のために受け付けます。
+> - 組み込みの `bridge.js` は `window.Nightzuku`（または `window.Shizuku`）を包んだものなので、ES6 モジュールの読み込み自体に完全信頼は不要でも、`exec` などのヘルパーを使うにはブリッジが公開されている必要があります。ブリッジが公開されていないと、`exec`・`verifyHost`・`download` などはエラーを投げます（`isBridgeAvailable()` で確かめられます）。コード上、ブリッジが公開されるのは、モジュールが有効で、アクセスのポリシーがブリッジを許可し、`usesShellBridge=true`（または完全信頼）で、さらに WebView のインターネットがオフ（または完全信頼）の場合です。
+> - コードのブリッジには、表にないメソッド `readText`、`writeText`、`listFiles`、`getRuntimeInfo` もあります。
+
+バックグラウンドでのアップデートの確認（`JobScheduler`）と、特権が必要な自動アップデートについては [NightDog のしくみ](nightdog.md) を参照してください。
